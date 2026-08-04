@@ -1,0 +1,7 @@
+# Normaliza finales de línea a LF en el repo (el deploy corre en Linux/VPS).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
