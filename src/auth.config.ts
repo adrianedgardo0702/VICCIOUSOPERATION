@@ -3,6 +3,9 @@ import type { NextAuthConfig } from "next-auth";
 // Configuración base, segura para el runtime edge (sin base de datos ni bcrypt).
 // La usa el middleware para proteger rutas. Los providers se añaden en auth.ts.
 export const authConfig = {
+  // Necesario al auto-hospedar (VPS/nginx): confía en el host de la petición
+  // (vía X-Forwarded-Host/Proto del reverse proxy). En Vercel es indiferente.
+  trustHost: true,
   pages: {
     signIn: "/login",
   },
