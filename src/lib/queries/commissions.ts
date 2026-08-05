@@ -1,7 +1,8 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { orders, users, commissionPayments } from "@/db/schema";
 import type { BusinessScope } from "@/lib/business";
+import { tierForSales } from "@/lib/commissions";
 
 export type SellerCommission = {
   id: string;
@@ -73,6 +74,108 @@ export async function getSellerCommissions(
       pending: Math.max(0, earned - paid).toFixed(2),
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Comisión GRUPAL por metas (mes calendario). El % lo define la facturación
+// del mes (subtotal de pedidos ENTREGADOS, los 3 negocios juntos) y el bolsón
+// se reparte en partes iguales entre los vendedores activos.
+// ---------------------------------------------------------------------------
+export type GroupSellerShare = {
+  id: string;
+  name: string;
+  share: number; // parte que le toca del bolsón del mes
+  paid: number; // liquidado a este vendedor dentro del mes
+  pending: number; // share - paid (>= 0)
+};
+
+export type GroupCommission = {
+  monthKey: string; // "YYYY-MM"
+  sales: number; // facturación del mes (subtotal entregado)
+  pct: number; // % del escalón alcanzado
+  pool: number; // bolsón = sales * pct/100
+  tierMin: number; // piso del escalón actual
+  nextMin: number | null; // piso del siguiente escalón
+  nextPct: number | null; // % del siguiente escalón
+  remainingToNext: number | null; // cuánto falta para el siguiente escalón
+  sellers: GroupSellerShare[];
+  sellerCount: number;
+  totalPaid: number; // liquidado en el mes (todos)
+};
+
+// Límites del mes en hora de Panamá (UTC-5 fijo), expresados en UTC.
+function monthRange(monthKey: string) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const start = new Date(Date.UTC(y, m - 1, 1, 5));
+  const end = new Date(Date.UTC(y, m, 1, 5));
+  return { start, end };
+}
+
+export async function getGroupCommission(monthKey: string): Promise<GroupCommission> {
+  const { start, end } = monthRange(monthKey);
+
+  // Facturación del mes: subtotal de pedidos entregados (todos los negocios).
+  const [salesRow] = await db
+    .select({
+      sales: sql<string>`coalesce(sum(${orders.subtotal}), 0)::text`,
+    })
+    .from(orders)
+    .where(
+      and(
+        eq(orders.status, "entregado"),
+        gte(orders.createdAt, start),
+        lt(orders.createdAt, end)
+      )
+    );
+  const sales = Number(salesRow?.sales ?? 0);
+
+  const tier = tierForSales(sales);
+  const pool = Math.round(((sales * tier.pct) / 100) * 100) / 100;
+
+  // Vendedores activos que reparten el bolsón.
+  const sellerRows = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(and(eq(users.role, "vendedor"), eq(users.active, true)))
+    .orderBy(asc(users.name));
+  const sellerCount = sellerRows.length;
+  const share = sellerCount > 0 ? Math.round((pool / sellerCount) * 100) / 100 : 0;
+
+  // Liquidado dentro del mes, por vendedor.
+  const paidRows = await db
+    .select({
+      sellerId: commissionPayments.sellerId,
+      paid: sql<string>`coalesce(sum(${commissionPayments.amount}), 0)::text`,
+    })
+    .from(commissionPayments)
+    .where(and(gte(commissionPayments.paidAt, start), lt(commissionPayments.paidAt, end)))
+    .groupBy(commissionPayments.sellerId);
+  const paidBy = new Map(paidRows.map((p) => [p.sellerId, Number(p.paid)]));
+
+  const sellers: GroupSellerShare[] = sellerRows.map((s) => {
+    const paid = paidBy.get(s.id) ?? 0;
+    return {
+      id: s.id,
+      name: s.name,
+      share,
+      paid,
+      pending: Math.max(0, Math.round((share - paid) * 100) / 100),
+    };
+  });
+
+  return {
+    monthKey,
+    sales,
+    pct: tier.pct,
+    pool,
+    tierMin: tier.min,
+    nextMin: tier.next?.min ?? null,
+    nextPct: tier.next?.pct ?? null,
+    remainingToNext: tier.next ? Math.max(0, tier.next.min - sales) : null,
+    sellers,
+    sellerCount,
+    totalPaid: sellers.reduce((s, r) => s + r.paid, 0),
+  };
 }
 
 // Historial de liquidaciones (opcionalmente de un vendedor).

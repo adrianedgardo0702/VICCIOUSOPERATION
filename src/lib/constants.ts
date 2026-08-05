@@ -38,6 +38,55 @@ export function isBusinessId(value: string): value is BusinessId {
 }
 
 // ----------------------------------------------------------------------------
+// Clientes (CRM) — tipos / segmentos y niveles de precio
+// ----------------------------------------------------------------------------
+
+export const CUSTOMER_TYPES = [
+  { value: "final", label: "Cliente final", color: "#6b7280" },
+  { value: "revendedor", label: "Revendedor", color: "#7c3aed" },
+  { value: "clinica", label: "Clínica", color: "#0ea5e9" },
+] as const;
+
+export type CustomerType = (typeof CUSTOMER_TYPES)[number]["value"];
+
+export const CUSTOMER_TYPE_VALUES = CUSTOMER_TYPES.map((t) => t.value) as CustomerType[];
+
+export function isCustomerType(v: string): v is CustomerType {
+  return CUSTOMER_TYPE_VALUES.includes(v as CustomerType);
+}
+
+export function getCustomerType(v: string) {
+  return CUSTOMER_TYPES.find((t) => t.value === v);
+}
+
+// Descuento efectivo (%) de un cliente: su override propio, o el de su tipo.
+export function effectiveDiscount(
+  customerType: string,
+  override: string | number | null | undefined,
+  levelDiscounts: Record<string, number>
+): number {
+  if (override !== null && override !== undefined && override !== "") {
+    const n = Number(override);
+    if (!Number.isNaN(n)) return clampPct(n);
+  }
+  return clampPct(levelDiscounts[customerType] ?? 0);
+}
+
+function clampPct(n: number): number {
+  return Math.min(Math.max(n, 0), 100);
+}
+
+// Aplica un descuento % a un precio y redondea a 2 decimales.
+export function priceWithDiscount(
+  price: string | number | null | undefined,
+  discountPct: number
+): number {
+  const p = typeof price === "string" ? Number(price) : price ?? 0;
+  if (!p || Number.isNaN(p)) return 0;
+  return Math.round(p * (1 - discountPct / 100) * 100) / 100;
+}
+
+// ----------------------------------------------------------------------------
 // Roles y permisos
 // ----------------------------------------------------------------------------
 

@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { customers } from "@/db/schema";
+import { customers, priceLevels } from "@/db/schema";
 import { requirePermission } from "@/lib/session";
+import { CUSTOMER_TYPE_VALUES } from "@/lib/constants";
 
 export type ActionResult<T = undefined> = {
   ok: boolean;
@@ -20,11 +21,22 @@ function refresh() {
 
 const customerSchema = z.object({
   name: z.string().trim().min(1, "El nombre es obligatorio."),
+  type: z.enum(CUSTOMER_TYPE_VALUES as [string, ...string[]]).default("final"),
+  // Descuento propio (%). Vacío = usa el del tipo.
+  priceDiscount: z.string().optional(),
   phone: z.string().trim().optional(),
   email: z.string().trim().email("Correo inválido.").optional().or(z.literal("")),
   address: z.string().trim().optional(),
   notes: z.string().trim().optional(),
 });
+
+// Normaliza un % (0–100) a string decimal, o null si vacío/ inválido.
+function pct(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (Number.isNaN(n) || n < 0) return null;
+  return Math.min(n, 100).toFixed(2);
+}
 
 export type CustomerInput = z.input<typeof customerSchema>;
 
@@ -41,6 +53,8 @@ export async function createCustomer(
     .insert(customers)
     .values({
       name: d.name,
+      type: d.type,
+      priceDiscount: pct(d.priceDiscount),
       phone: d.phone || null,
       email: d.email || null,
       address: d.address || null,
@@ -66,6 +80,8 @@ export async function updateCustomer(
     .update(customers)
     .set({
       name: d.name,
+      type: d.type,
+      priceDiscount: pct(d.priceDiscount),
       phone: d.phone || null,
       email: d.email || null,
       address: d.address || null,
@@ -113,4 +129,30 @@ export async function createCustomerQuick(
 
   refresh();
   return { ok: true, data: c };
+}
+
+// Actualiza el descuento % de los niveles de precio (revendedor/clínica/final).
+const levelsSchema = z.array(
+  z.object({
+    type: z.string(),
+    discountPct: z.coerce.number().min(0).max(100),
+  })
+);
+
+export async function updatePriceLevels(
+  input: { type: string; discountPct: number | string }[]
+): Promise<ActionResult> {
+  await requirePermission("customers.manage");
+  const parsed = levelsSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Datos inválidos." };
+
+  for (const lvl of parsed.data) {
+    await db
+      .update(priceLevels)
+      .set({ discountPct: lvl.discountPct.toFixed(2) })
+      .where(eq(priceLevels.type, lvl.type));
+  }
+  revalidatePath("/clientes");
+  revalidatePath("/pedidos");
+  return { ok: true };
 }

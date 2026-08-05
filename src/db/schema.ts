@@ -171,12 +171,26 @@ export const referrers = pgTable("referrers", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Niveles de precio por tipo de cliente. `type` = final | revendedor | clinica.
+// discountPct = % de descuento sobre el precio de venta (final normalmente 0).
+export const priceLevels = pgTable("price_levels", {
+  type: text("type").primaryKey(),
+  label: text("label").notNull(),
+  discountPct: numeric("discount_pct", { precision: 5, scale: 2 })
+    .notNull()
+    .default("0"),
+});
+
 // Clientes (CRM). Compartidos entre negocios: una ficha ve el historial cruzado.
 export const customers = pgTable(
   "customers",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
+    // Segmento: 'final' | 'revendedor' | 'clinica'. Define el nivel de precio.
+    type: text("type").notNull().default("final"),
+    // Descuento propio (%) que sobre-escribe el del tipo. null = usa el del tipo.
+    priceDiscount: numeric("price_discount", { precision: 5, scale: 2 }),
     phone: text("phone"),
     email: text("email"),
     address: text("address"),
@@ -184,7 +198,7 @@ export const customers = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index("idx_customers_phone").on(t.phone)]
+  (t) => [index("idx_customers_phone").on(t.phone), index("idx_customers_type").on(t.type)]
 );
 
 export const orders = pgTable(

@@ -1,6 +1,7 @@
 import { requirePermission, can } from "@/lib/session";
 import { formatMoney } from "@/lib/format";
-import { getCustomers } from "@/lib/queries/customers";
+import { isCustomerType } from "@/lib/constants";
+import { getCustomers, getPriceLevels } from "@/lib/queries/customers";
 import {
   Card,
   CardContent,
@@ -13,13 +14,17 @@ import { CustomersManager } from "./_components/customers-manager";
 export default async function ClientesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; type?: string }>;
 }) {
   const user = await requirePermission("customers.view");
   const canManage = can(user, "customers.manage");
-  const { q } = await searchParams;
+  const { q, type } = await searchParams;
+  const typeFilter = type && isCustomerType(type) ? type : undefined;
 
-  const customers = await getCustomers(q);
+  const [customers, priceLevels] = await Promise.all([
+    getCustomers({ search: q, type: typeFilter }),
+    getPriceLevels(),
+  ]);
 
   const totalCustomers = customers.length;
   const withOrders = customers.filter((c) => c.ordersCount > 0).length;
@@ -30,7 +35,7 @@ export default async function ClientesPage({
       <div>
         <h1 className="text-2xl font-bold">Clientes</h1>
         <p className="text-muted-foreground">
-          Ficha única por cliente con su historial en los 3 negocios.
+          Ficha única por cliente, con su segmento, nivel de precio e historial.
         </p>
       </div>
 
@@ -47,8 +52,10 @@ export default async function ClientesPage({
 
       <CustomersManager
         customers={customers}
+        priceLevels={priceLevels}
         canManage={canManage}
         query={q ?? ""}
+        typeFilter={typeFilter ?? ""}
       />
     </div>
   );

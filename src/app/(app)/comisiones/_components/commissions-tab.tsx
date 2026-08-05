@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { HandCoins, Pencil } from "lucide-react";
+import { HandCoins, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import {
   Table,
@@ -16,6 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -23,142 +30,198 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { formatMoney } from "@/lib/format";
-import { ROLE_LABELS, type Role } from "@/lib/constants";
-import { SELLER_COMMISSION_TYPES, commissionLabel } from "@/lib/commissions";
-import type { SellerCommission } from "@/lib/queries/commissions";
-import {
-  updateSellerCommission,
-  liquidateCommission,
-  type CommissionConfigInput,
-  type CommissionPayoutInput,
-} from "../actions";
+import { COMMISSION_TIERS } from "@/lib/commissions";
+import type { GroupCommission, GroupSellerShare } from "@/lib/queries/commissions";
+import { liquidateCommission, type CommissionPayoutInput } from "../actions";
 
-export function CommissionsTab({
-  sellers,
+export function GroupCommissions({
+  data,
+  monthLabel,
   canManage,
 }: {
-  sellers: SellerCommission[];
+  data: GroupCommission;
+  monthLabel: string;
   canManage: boolean;
 }) {
-  const [config, setConfig] = useState<SellerCommission | null>(null);
-  const [payout, setPayout] = useState<SellerCommission | null>(null);
+  const [payout, setPayout] = useState<GroupSellerShare | null>(null);
+
+  const progressPct = data.nextMin
+    ? Math.min(100, Math.round((data.sales / data.nextMin) * 100))
+    : 100;
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Vendedor</TableHead>
-              <TableHead>Comisión</TableHead>
-              <TableHead className="text-center">Pedidos</TableHead>
-              <TableHead className="text-right">Ganado</TableHead>
-              <TableHead className="text-right">En proceso</TableHead>
-              <TableHead className="text-right">Liquidado</TableHead>
-              <TableHead className="text-right">Por pagar</TableHead>
-              {canManage && <TableHead className="w-[130px]" />}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sellers.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={canManage ? 8 : 7}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  Aún no hay comisiones registradas.
-                </TableCell>
-              </TableRow>
-            )}
-            {sellers.map((s) => {
-              const pending = Number(s.pending);
-              return (
-                <TableRow key={s.id}>
-                  <TableCell>
-                    <div className="font-medium">{s.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {ROLE_LABELS[s.role as Role] ?? s.role}
-                      {!s.active && " · inactivo"}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {Number(s.commissionValue) > 0 ? (
-                      commissionLabel(s.commissionType, s.commissionValue)
-                    ) : (
-                      <span className="text-muted-foreground">Sin comisión</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center">{s.ordersCount}</TableCell>
-                  <TableCell className="text-right font-medium tabular-nums text-emerald-600">
-                    {formatMoney(s.earned)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {formatMoney(s.inProgress)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {formatMoney(s.paid)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {pending > 0 ? (
-                      <Badge variant="secondary" className="text-amber-600">
-                        {formatMoney(s.pending)}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground">{formatMoney(0)}</span>
-                    )}
-                  </TableCell>
-                  {canManage && (
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8"
-                          title="Editar comisión"
-                          onClick={() => setConfig(s)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 text-emerald-600 hover:text-emerald-600"
-                          title="Liquidar"
-                          disabled={pending <= 0}
-                          onClick={() => setPayout(s)}
-                        >
-                          <HandCoins className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
+    <div className="space-y-6">
+      {/* Panel de meta del mes */}
+      <Card>
+        <CardContent className="space-y-4 pt-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Facturación del mes (entregado)
+              </p>
+              <p className="text-3xl font-bold tabular-nums">
+                {formatMoney(data.sales)}
+              </p>
+            </div>
+            <div className="sm:text-right">
+              <p className="text-sm text-muted-foreground">Comisión del grupo</p>
+              <p className="text-3xl font-bold tabular-nums text-emerald-600">
+                {data.pct}% · {formatMoney(data.pool)}
+              </p>
+            </div>
+          </div>
+
+          {data.nextMin ? (
+            <div className="space-y-1.5">
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Faltan{" "}
+                <span className="font-medium text-foreground">
+                  {formatMoney(data.remainingToNext)}
+                </span>{" "}
+                para el {data.nextPct}% (meta {formatMoney(data.nextMin)}).
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm font-medium text-amber-600">
+              <Trophy className="h-4 w-4" /> ¡Meta máxima alcanzada — 5%!
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Escalones */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Escalones de comisión</CardTitle>
+            <CardDescription>
+              El % se aplica a toda la facturación del mes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Facturación del mes</TableHead>
+                    <TableHead className="text-right">Comisión</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {COMMISSION_TIERS.map((t, i) => {
+                    const active = t.pct === data.pct;
+                    const label =
+                      i === 0
+                        ? `Menos de ${formatMoney(COMMISSION_TIERS[1].min)}`
+                        : `Desde ${formatMoney(t.min)}`;
+                    return (
+                      <TableRow key={t.pct} className={active ? "bg-primary/10" : undefined}>
+                        <TableCell className={active ? "font-medium" : undefined}>
+                          {label}
+                          {active && (
+                            <Badge variant="secondary" className="ml-2">
+                              actual
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">
+                          {t.pct}%
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Reparto entre vendedores */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Reparto entre vendedores</CardTitle>
+            <CardDescription>
+              {data.sellerCount > 0
+                ? `Partes iguales · ${formatMoney(data.pool)} ÷ ${data.sellerCount}`
+                : "No hay vendedores activos"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Vendedor</TableHead>
+                    <TableHead className="text-right">Le toca</TableHead>
+                    <TableHead className="text-right">Liquidado</TableHead>
+                    <TableHead className="text-right">Por pagar</TableHead>
+                    {canManage && <TableHead className="w-[40px]" />}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.sellers.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={canManage ? 5 : 4}
+                        className="h-20 text-center text-muted-foreground"
+                      >
+                        No hay vendedores activos para repartir.
+                      </TableCell>
+                    </TableRow>
                   )}
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+                  {data.sellers.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">{s.name}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatMoney(s.share)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {formatMoney(s.paid)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {s.pending > 0 ? (
+                          <Badge variant="secondary" className="text-amber-600">
+                            {formatMoney(s.pending)}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">{formatMoney(0)}</span>
+                        )}
+                      </TableCell>
+                      {canManage && (
+                        <TableCell>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-emerald-600 hover:text-emerald-600"
+                            title="Liquidar"
+                            disabled={s.pending <= 0}
+                            onClick={() => setPayout(s)}
+                          >
+                            <HandCoins className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {canManage && config && (
-        <ConfigDialog
-          key={`cfg-${config.id}`}
-          seller={config}
-          open
-          onOpenChange={(o) => !o && setConfig(null)}
-        />
-      )}
       {canManage && payout && (
         <PayoutDialog
-          key={`pay-${payout.id}`}
+          key={payout.id}
           seller={payout}
+          monthLabel={monthLabel}
           open
           onOpenChange={(o) => !o && setPayout(null)}
         />
@@ -167,97 +230,14 @@ export function CommissionsTab({
   );
 }
 
-function ConfigDialog({
-  seller,
-  open,
-  onOpenChange,
-}: {
-  seller: SellerCommission;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [isPending, startTransition] = useTransition();
-  const [type, setType] = useState<string>(seller.commissionType);
-
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const input: CommissionConfigInput = {
-      commissionType: type as "percent" | "fixed",
-      commissionValue: Number(fd.get("commissionValue") ?? 0),
-    };
-    startTransition(async () => {
-      const res = await updateSellerCommission(seller.id, input);
-      if (res.ok) {
-        toast.success("Comisión actualizada.");
-        onOpenChange(false);
-      } else toast.error(res.error);
-    });
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Comisión de {seller.name}</DialogTitle>
-          <DialogDescription>
-            Se aplica a los pedidos nuevos que registre este vendedor.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Tipo de comisión</Label>
-              <Select
-                items={Object.fromEntries(
-                  SELLER_COMMISSION_TYPES.map((t) => [t.value, t.label])
-                )}
-                value={type}
-                onValueChange={(v) => setType(v ?? "percent")}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SELLER_COMMISSION_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="commissionValue">
-                {type === "percent" ? "Porcentaje (%)" : "Monto ($)"}
-              </Label>
-              <Input
-                id="commissionValue"
-                name="commissionValue"
-                type="number"
-                min={0}
-                step="0.01"
-                defaultValue={seller.commissionValue}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="submit" disabled={isPending}>
-              {isPending ? "Guardando…" : "Guardar"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function PayoutDialog({
   seller,
+  monthLabel,
   open,
   onOpenChange,
 }: {
-  seller: SellerCommission;
+  seller: GroupSellerShare;
+  monthLabel: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -284,7 +264,7 @@ function PayoutDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Liquidar comisión a {seller.name}</DialogTitle>
+          <DialogTitle>Liquidar a {seller.name}</DialogTitle>
           <DialogDescription>
             Por pagar: {formatMoney(seller.pending)}. El pago se refleja como
             egreso “Pago de comisión” en el flujo de caja.
@@ -305,7 +285,11 @@ function PayoutDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="note">Periodo / nota</Label>
-            <Input id="note" name="note" placeholder="ej: 1–15 de agosto" />
+            <Input
+              id="note"
+              name="note"
+              defaultValue={`Comisión ${monthLabel}`}
+            />
           </div>
           <DialogFooter>
             <Button type="submit" disabled={isPending}>

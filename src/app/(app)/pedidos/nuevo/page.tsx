@@ -5,7 +5,7 @@ import { getCurrentBusiness } from "@/lib/business";
 import { getBusiness, isProductionBusiness } from "@/lib/constants";
 import { getOrderCatalog } from "@/lib/queries/orders";
 import { getActiveReferrers } from "@/lib/queries/referrers";
-import { getCustomerOptions } from "@/lib/queries/customers";
+import { getCustomerOptions, getPriceLevelMap } from "@/lib/queries/customers";
 import { Button } from "@/components/ui/button";
 import { BusinessChooser } from "./business-chooser";
 import { OrderForm } from "./order-form";
@@ -43,6 +43,7 @@ export default async function NuevoPedidoPage() {
           catalog={await getOrderCatalog(scope)}
           referrers={await getActiveReferrers()}
           customers={await getCustomerOptions()}
+          priceLevels={await getPriceLevelMap()}
         />
       )}
     </div>

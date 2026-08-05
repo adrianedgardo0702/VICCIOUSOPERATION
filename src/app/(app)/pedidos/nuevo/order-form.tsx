@@ -30,7 +30,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatMoney } from "@/lib/format";
-import { SHIPPING_METHODS, getShippingMethod, type BusinessId } from "@/lib/constants";
+import {
+  SHIPPING_METHODS,
+  getShippingMethod,
+  getCustomerType,
+  effectiveDiscount,
+  priceWithDiscount,
+  type BusinessId,
+} from "@/lib/constants";
 import type { OrderCatalog } from "@/lib/queries/orders";
 import type { CustomerOption } from "@/lib/queries/customers";
 import { computeReferralCommission, REFERRAL_COMMISSION_TYPES } from "@/lib/referrals";
@@ -60,12 +67,14 @@ export function OrderForm({
   catalog,
   referrers,
   customers,
+  priceLevels,
 }: {
   businessId: BusinessId;
   isProduction: boolean;
   catalog: OrderCatalog;
   referrers: ReferrerOption[];
   customers: CustomerOption[];
+  priceLevels: Record<string, number>;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -110,7 +119,21 @@ export function OrderForm({
   const [blankId, setBlankId] = useState<string | null>(null);
   const [qty, setQty] = useState("1");
 
-  const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+  // Descuento por nivel de precio del cliente seleccionado.
+  const selectedCustomer = customerId
+    ? customers.find((c) => c.id === customerId)
+    : undefined;
+  const custDiscount = selectedCustomer
+    ? effectiveDiscount(selectedCustomer.type, selectedCustomer.priceDiscount, priceLevels)
+    : 0;
+  const custTypeLabel = selectedCustomer
+    ? getCustomerType(selectedCustomer.type)?.label
+    : undefined;
+
+  const subtotal = lines.reduce(
+    (s, l) => s + priceWithDiscount(l.unitPrice, custDiscount) * l.quantity,
+    0
+  );
   const disc = Math.min(Math.max(Number(discount) || 0, 0), subtotal);
   const shipCost = isPickup ? 0 : Math.max(Number(shipCharge) || 0, 0);
   const total = subtotal - disc + shipCost;
@@ -255,6 +278,11 @@ export function OrderForm({
                 Elige uno para autocompletar, o déjalo en “nuevo” y se creará su
                 ficha al guardar.
               </p>
+              {selectedCustomer && custDiscount > 0 && (
+                <p className="text-xs font-medium text-emerald-600">
+                  {custTypeLabel}: precios con −{custDiscount}% aplicado.
+                </p>
+              )}
             </div>
           )}
           <div className="space-y-2">
@@ -568,16 +596,23 @@ export function OrderForm({
           {lines.length > 0 && (
             <div className="space-y-2">
               <Separator />
-              {lines.map((l) => (
+              {lines.map((l) => {
+                const unit = priceWithDiscount(l.unitPrice, custDiscount);
+                return (
                 <div key={l.key} className="flex items-center gap-3 text-sm">
                   <div className="flex-1">
                     <div className="font-medium">{l.description}</div>
                     <div className="text-xs text-muted-foreground">
-                      {l.quantity} × {formatMoney(l.unitPrice)}
+                      {l.quantity} × {formatMoney(unit)}
+                      {custDiscount > 0 && (
+                        <span className="ml-1 text-emerald-600">
+                          (−{custDiscount}% · antes {formatMoney(l.unitPrice)})
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="tabular-nums font-medium">
-                    {formatMoney(l.unitPrice * l.quantity)}
+                    {formatMoney(unit * l.quantity)}
                   </div>
                   <Button
                     type="button"
@@ -589,7 +624,8 @@ export function OrderForm({
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

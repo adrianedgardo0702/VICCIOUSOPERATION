@@ -21,9 +21,12 @@ import {
   isBusinessId,
   orderFlowFor,
   ORDER_STATUS_META,
+  effectiveDiscount,
+  priceWithDiscount,
   type BusinessId,
   type OrderStatus,
 } from "@/lib/constants";
+import { getPriceLevelMap } from "@/lib/queries/customers";
 
 export type ActionResult<T = undefined> = {
   ok: boolean;
@@ -137,6 +140,19 @@ export async function createOrder(
   const resolved: Resolved[] = [];
 
   try {
+    // Descuento del cliente seleccionado (su nivel de precio). Los clientes
+    // creados al vuelo son "final" (0%).
+    let priceDiscount = 0;
+    if (d.customerId) {
+      const c = await db.query.customers.findFirst({
+        where: eq(customers.id, d.customerId),
+      });
+      if (c) {
+        const levelMap = await getPriceLevelMap();
+        priceDiscount = effectiveDiscount(c.type, c.priceDiscount, levelMap);
+      }
+    }
+
     for (const it of d.items) {
       if (b === "nakama") {
         if (!it.designId || !it.blankId)
@@ -154,7 +170,7 @@ export async function createOrder(
           blankId: blank.id,
           description: `${design.name} · ${blank.size}/${blank.color} (SKU ${design.sku})`,
           quantity: it.quantity,
-          unitPrice: Number(design.price ?? 0),
+          unitPrice: priceWithDiscount(design.price, priceDiscount),
         });
       } else {
         if (!it.productId) return { ok: false, error: "Selecciona un producto." };
@@ -168,7 +184,7 @@ export async function createOrder(
           blankId: null,
           description: product.unit ? `${product.name} (${product.unit})` : product.name,
           quantity: it.quantity,
-          unitPrice: Number(product.price ?? 0),
+          unitPrice: priceWithDiscount(product.price, priceDiscount),
         });
       }
     }

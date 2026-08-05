@@ -16,6 +16,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { CUSTOMER_TYPES } from "@/lib/constants";
 import type { CustomerDetail } from "@/lib/queries/customers";
 import { updateCustomer, deleteCustomer, type CustomerInput } from "../actions";
 
@@ -90,12 +98,15 @@ function EditDialog({
   onOpenChange: (o: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [type, setType] = useState<string>(customer.type);
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const input: CustomerInput = {
       name: String(fd.get("name") ?? ""),
+      type,
+      priceDiscount: String(fd.get("priceDiscount") ?? ""),
       phone: String(fd.get("phone") ?? ""),
       email: String(fd.get("email") ?? ""),
       address: String(fd.get("address") ?? ""),
@@ -120,6 +131,40 @@ function EditDialog({
           <div className="space-y-2">
             <Label htmlFor="e-name">Nombre *</Label>
             <Input id="e-name" name="name" defaultValue={customer.name} required />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Tipo de cliente</Label>
+              <Select
+                items={Object.fromEntries(CUSTOMER_TYPES.map((t) => [t.value, t.label]))}
+                value={type}
+                onValueChange={(v) => setType(v ?? "final")}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CUSTOMER_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="e-discount">Descuento propio (%)</Label>
+              <Input
+                id="e-discount"
+                name="priceDiscount"
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                defaultValue={customer.priceDiscount ?? ""}
+                placeholder="usa el de su tipo"
+              />
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">

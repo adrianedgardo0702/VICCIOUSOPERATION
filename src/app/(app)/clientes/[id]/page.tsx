@@ -1,13 +1,21 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Mail, MapPin, Phone } from "lucide-react";
+import { ArrowLeft, Mail, MapPin, Phone, Tag, CalendarClock, Repeat } from "lucide-react";
 import { requirePermission, can } from "@/lib/session";
-import { getBusiness, ORDER_STATUS_META, type OrderStatus } from "@/lib/constants";
+import {
+  getBusiness,
+  getCustomerType,
+  effectiveDiscount,
+  ORDER_STATUS_META,
+  type OrderStatus,
+} from "@/lib/constants";
 import { formatMoney, formatDate } from "@/lib/format";
 import {
   getCustomer,
   getCustomerOrders,
   getCustomerStats,
+  getCustomerInsights,
+  getPriceLevelMap,
 } from "@/lib/queries/customers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,12 +45,20 @@ export default async function ClienteDetallePage({
   const canManage = can(user, "customers.manage");
   const { id } = await params;
 
-  const [customer, orders, stats] = await Promise.all([
+  const [customer, orders, stats, insights, levelMap] = await Promise.all([
     getCustomer(id),
     getCustomerOrders(id),
     getCustomerStats(id),
+    getCustomerInsights(id),
+    getPriceLevelMap(),
   ]);
   if (!customer) notFound();
+
+  const typeMeta = getCustomerType(customer.type);
+  const discount = effectiveDiscount(customer.type, customer.priceDiscount, levelMap);
+  const hasOwnDiscount =
+    customer.priceDiscount !== null && customer.priceDiscount !== "";
+  const status = customerStatus(stats.ordersCount, insights.daysSinceLast);
 
   return (
     <div className="space-y-6">
@@ -52,7 +68,19 @@ export default async function ClienteDetallePage({
             <ArrowLeft className="mr-1 h-4 w-4" />
             Clientes
           </Button>
-          <h1 className="text-2xl font-bold">{customer.name}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold">{customer.name}</h1>
+            <Badge
+              variant="secondary"
+              className="border"
+              style={{ color: typeMeta?.color, borderColor: typeMeta?.color }}
+            >
+              {typeMeta?.label ?? customer.type}
+            </Badge>
+            <Badge variant="secondary" style={{ color: status.color }}>
+              {status.label}
+            </Badge>
+          </div>
           <p className="text-sm text-muted-foreground">
             Cliente desde {formatDate(customer.createdAt)}
           </p>
@@ -60,7 +88,7 @@ export default async function ClienteDetallePage({
         {canManage && <CustomerActions customer={customer} />}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Pedidos" value={String(stats.ordersCount)} hint="Sin cancelados" />
         <StatCard
           label="Total gastado"
@@ -69,6 +97,47 @@ export default async function ClienteDetallePage({
           color="#059669"
         />
         <StatCard label="Ticket promedio" value={formatMoney(stats.avgTicket)} hint="Por pedido" />
+        <StatCard
+          label="Nivel de precio"
+          value={discount > 0 ? `−${discount}%` : "Precio normal"}
+          hint={hasOwnDiscount ? "Descuento propio" : `Por tipo: ${typeMeta?.label ?? customer.type}`}
+          color={discount > 0 ? "#7c3aed" : undefined}
+        />
+      </div>
+
+      {/* Comportamiento de compra */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <InsightCard
+          icon={CalendarClock}
+          label="Primera compra"
+          value={insights.firstOrderAt ? formatDate(insights.firstOrderAt) : "—"}
+        />
+        <InsightCard
+          icon={CalendarClock}
+          label="Última compra"
+          value={insights.lastOrderAt ? formatDate(insights.lastOrderAt) : "—"}
+          hint={
+            insights.daysSinceLast !== null
+              ? `hace ${insights.daysSinceLast} días`
+              : undefined
+          }
+        />
+        <InsightCard
+          icon={Repeat}
+          label="Frecuencia"
+          value={
+            insights.avgIntervalDays !== null
+              ? `~${insights.avgIntervalDays} días`
+              : "—"
+          }
+          hint="entre compras"
+        />
+        <InsightCard
+          icon={Tag}
+          label="Descuento aplicado"
+          value={discount > 0 ? `−${discount}%` : "0%"}
+          hint={hasOwnDiscount ? "propio" : "por tipo"}
+        />
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -122,6 +191,27 @@ export default async function ClienteDetallePage({
           </CardContent>
         </Card>
       </div>
+
+      {/* Productos más comprados */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Productos más comprados</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {insights.topProducts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Aún no tiene compras.</p>
+          ) : (
+            <div className="space-y-2">
+              {insights.topProducts.map((p) => (
+                <div key={p.description} className="flex items-center gap-3 text-sm">
+                  <span className="flex-1">{p.description}</span>
+                  <Badge variant="secondary">{p.qty} u</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Historial de pedidos */}
       <Card>
@@ -221,6 +311,46 @@ function StatCard({
       </CardContent>
     </Card>
   );
+}
+
+function InsightCard({
+  icon: Icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: typeof Phone;
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 pt-6">
+        <Icon className="h-5 w-5 shrink-0 text-muted-foreground" />
+        <div>
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="font-medium tabular-nums">{value}</p>
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Estado del cliente según recencia de compra.
+function customerStatus(
+  ordersCount: number,
+  daysSinceLast: number | null
+): { label: string; color: string } {
+  if (ordersCount === 0 || daysSinceLast === null)
+    return { label: "Sin compras", color: "#9ca3af" };
+  if (daysSinceLast <= 45)
+    return ordersCount <= 1 && daysSinceLast <= 30
+      ? { label: "Nuevo", color: "#2563eb" }
+      : { label: "Activo", color: "#059669" };
+  if (daysSinceLast <= 90) return { label: "En riesgo", color: "#d97706" };
+  return { label: "Inactivo", color: "#6b7280" };
 }
 
 function ContactRow({
