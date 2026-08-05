@@ -19,11 +19,20 @@ const globalForDb = globalThis as unknown as {
 // instancias se agota el límite del pooler. Mantener `max` bajo y cerrar
 // conexiones ociosas evita el error EMAXCONNSESSION. `prepare:false` es
 // obligatorio con el pooler de transacciones de Supabase (puerto 6543).
+// `connect_timeout` (segundos) hace que la función falle rápido si el pooler
+// está saturado, en vez de colgarse hasta el límite de 300s de Vercel (lo que
+// retiene conexiones y agrava el atasco). Reusar el cliente entre invocaciones
+// tibias de la MISMA instancia evita abrir un pool nuevo por request.
 const client =
   globalForDb.client ??
-  postgres(connectionString, { prepare: false, max: 1, idle_timeout: 20 });
+  postgres(connectionString, {
+    prepare: false,
+    max: 1,
+    idle_timeout: 20,
+    connect_timeout: 10,
+  });
 
-if (process.env.NODE_ENV !== "production") globalForDb.client = client;
+globalForDb.client = client;
 
 export const db = drizzle(client, { schema });
 export { schema };
