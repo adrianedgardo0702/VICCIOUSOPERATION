@@ -58,6 +58,7 @@ type Line = {
   description: string;
   unitPrice: number; // precio de venta base (detal)
   wholesale?: number | null; // precio especial revendedor/clínica (si tiene)
+  priceOverride?: number | null; // precio unitario forzado a mano (manda si está)
   quantity: number;
 };
 
@@ -128,7 +129,8 @@ export function OrderForm({
     ? getCustomerType(selectedCustomer.type)?.label
     : undefined;
 
-  function lineUnit(l: Line): number {
+  // Precio automático (según cliente/nivel), sin considerar el manual.
+  function autoUnit(l: Line): number {
     if (!selectedCustomer) return l.unitPrice;
     return effectiveUnitPrice({
       retail: l.unitPrice,
@@ -137,6 +139,23 @@ export function OrderForm({
       override: selectedCustomer.priceDiscount,
       levelDiscounts: priceLevels,
     });
+  }
+
+  // Precio efectivo: el manual manda; si no, el automático.
+  function lineUnit(l: Line): number {
+    return l.priceOverride != null ? l.priceOverride : autoUnit(l);
+  }
+
+  // Fijar/limpiar el precio manual de una línea (vacío = automático).
+  function setLineOverride(key: string, value: string) {
+    const v = value.trim();
+    setLines((prev) =>
+      prev.map((l) =>
+        l.key === key
+          ? { ...l, priceOverride: v === "" ? null : Math.max(0, Number(v) || 0) }
+          : l
+      )
+    );
   }
 
   const subtotal = lines.reduce((s, l) => s + lineUnit(l) * l.quantity, 0);
@@ -230,8 +249,17 @@ export function OrderForm({
       notes: String(fd.get("notes") ?? ""),
       items: lines.map((l) =>
         isProduction
-          ? { designId: l.designId, blankId: l.blankId, quantity: l.quantity }
-          : { productId: l.productId, quantity: l.quantity }
+          ? {
+              designId: l.designId,
+              blankId: l.blankId,
+              quantity: l.quantity,
+              priceOverride: l.priceOverride ?? undefined,
+            }
+          : {
+              productId: l.productId,
+              quantity: l.quantity,
+              priceOverride: l.priceOverride ?? undefined,
+            }
       ),
     };
 
@@ -605,17 +633,38 @@ export function OrderForm({
             <div className="space-y-2">
               <Separator />
               {lines.map((l) => {
+                const auto = autoUnit(l);
                 const unit = lineUnit(l);
+                const overridden = l.priceOverride != null;
                 return (
                 <div key={l.key} className="flex items-center gap-3 text-sm">
                   <div className="flex-1">
                     <div className="font-medium">{l.description}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {l.quantity} × {formatMoney(unit)}
-                      {unit < l.unitPrice && (
-                        <span className="ml-1 text-emerald-600">
-                          (antes {formatMoney(l.unitPrice)})
+                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{l.quantity} ×</span>
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2">
+                          $
                         </span>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={overridden ? String(l.priceOverride) : ""}
+                          placeholder={auto.toFixed(2)}
+                          onChange={(e) => setLineOverride(l.key, e.target.value)}
+                          className="h-7 w-24 pl-5 text-right"
+                          aria-label="Precio unitario"
+                        />
+                      </div>
+                      {overridden ? (
+                        <span className="font-medium text-violet-600">manual</span>
+                      ) : (
+                        auto < l.unitPrice && (
+                          <span className="text-emerald-600">
+                            (antes {formatMoney(l.unitPrice)})
+                          </span>
+                        )
                       )}
                     </div>
                   </div>

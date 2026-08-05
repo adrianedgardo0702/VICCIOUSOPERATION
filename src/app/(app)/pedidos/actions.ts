@@ -92,6 +92,8 @@ const itemSchema = z.object({
   designId: z.string().uuid().nullable().optional(),
   blankId: z.string().uuid().nullable().optional(),
   quantity: z.coerce.number().int().min(1),
+  // Precio unitario forzado a mano; si viene, manda sobre el calculado.
+  priceOverride: z.coerce.number().min(0).optional(),
 });
 
 const orderSchema = z.object({
@@ -171,12 +173,15 @@ export async function createOrder(
           blankId: blank.id,
           description: `${design.name} · ${blank.size}/${blank.color} (SKU ${design.sku})`,
           quantity: it.quantity,
-          unitPrice: effectiveUnitPrice({
-            retail: design.price,
-            customerType: custType,
-            override: custOverride,
-            levelDiscounts: levelMap,
-          }),
+          unitPrice:
+            it.priceOverride != null
+              ? it.priceOverride
+              : effectiveUnitPrice({
+                  retail: design.price,
+                  customerType: custType,
+                  override: custOverride,
+                  levelDiscounts: levelMap,
+                }),
         });
       } else {
         if (!it.productId) return { ok: false, error: "Selecciona un producto." };
@@ -190,13 +195,16 @@ export async function createOrder(
           blankId: null,
           description: product.unit ? `${product.name} (${product.unit})` : product.name,
           quantity: it.quantity,
-          unitPrice: effectiveUnitPrice({
-            retail: product.price,
-            wholesale: product.priceWholesale,
-            customerType: custType,
-            override: custOverride,
-            levelDiscounts: levelMap,
-          }),
+          unitPrice:
+            it.priceOverride != null
+              ? it.priceOverride
+              : effectiveUnitPrice({
+                  retail: product.price,
+                  wholesale: product.priceWholesale,
+                  customerType: custType,
+                  override: custOverride,
+                  levelDiscounts: levelMap,
+                }),
         });
       }
     }
