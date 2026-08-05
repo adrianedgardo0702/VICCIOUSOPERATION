@@ -1,6 +1,11 @@
 import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { orders, users, commissionPayments } from "@/db/schema";
+import {
+  orders,
+  users,
+  commissionPayments,
+  commissionSettings,
+} from "@/db/schema";
 import type { BusinessScope } from "@/lib/business";
 import { tierForSales } from "@/lib/commissions";
 
@@ -91,9 +96,11 @@ export type GroupSellerShare = {
 
 export type GroupCommission = {
   monthKey: string; // "YYYY-MM"
+  mode: "auto" | "manual"; // origen del bolsón
+  manualPool: number; // monto escrito a mano (si mode = manual)
   sales: number; // facturación del mes (subtotal entregado)
-  pct: number; // % del escalón alcanzado
-  pool: number; // bolsón = sales * pct/100
+  pct: number; // % del escalón alcanzado (referencia)
+  pool: number; // bolsón efectivo (auto = sales*pct/100 · manual = manualPool)
   tierMin: number; // piso del escalón actual
   nextMin: number | null; // piso del siguiente escalón
   nextPct: number | null; // % del siguiente escalón
@@ -130,7 +137,15 @@ export async function getGroupCommission(monthKey: string): Promise<GroupCommiss
   const sales = Number(salesRow?.sales ?? 0);
 
   const tier = tierForSales(sales);
-  const pool = Math.round(((sales * tier.pct) / 100) * 100) / 100;
+  const autoPool = Math.round(((sales * tier.pct) / 100) * 100) / 100;
+
+  // Ajuste del mes (auto vs. bolsón manual).
+  const setting = await db.query.commissionSettings.findFirst({
+    where: eq(commissionSettings.monthKey, monthKey),
+  });
+  const mode: "auto" | "manual" = setting?.mode === "manual" ? "manual" : "auto";
+  const manualPool = Number(setting?.manualPool ?? 0);
+  const pool = mode === "manual" ? manualPool : autoPool;
 
   // Vendedores activos que reparten el bolsón.
   const sellerRows = await db
@@ -165,6 +180,8 @@ export async function getGroupCommission(monthKey: string): Promise<GroupCommiss
 
   return {
     monthKey,
+    mode,
+    manualPool,
     sales,
     pct: tier.pct,
     pool,

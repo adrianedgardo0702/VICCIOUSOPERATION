@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { users, commissionPayments, financeTransactions } from "@/db/schema";
+import {
+  users,
+  commissionPayments,
+  financeTransactions,
+  commissionSettings,
+} from "@/db/schema";
 import { requirePermission } from "@/lib/session";
 
 export type ActionResult = { ok: boolean; error?: string };
@@ -99,6 +104,46 @@ export async function liquidateCommission(
 export async function deleteCommissionPayment(id: string): Promise<ActionResult> {
   await requirePermission("commissions.manage");
   await db.delete(commissionPayments).where(eq(commissionPayments.id, id));
+  refresh();
+  return { ok: true };
+}
+
+// -------------------------------------------------------------------------
+// Ajuste de la comisión grupal del mes (auto vs. bolsón manual).
+// -------------------------------------------------------------------------
+const settingSchema = z.object({
+  monthKey: z.string().regex(/^\d{4}-\d{2}$/, "Mes inválido."),
+  mode: z.enum(["auto", "manual"]),
+  manualPool: z.coerce.number().min(0, "El monto no puede ser negativo.").default(0),
+});
+
+export type CommissionSettingInput = z.input<typeof settingSchema>;
+
+export async function setCommissionSetting(
+  input: CommissionSettingInput
+): Promise<ActionResult> {
+  await requirePermission("commissions.manage");
+  const parsed = settingSchema.safeParse(input);
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
+  const d = parsed.data;
+
+  await db
+    .insert(commissionSettings)
+    .values({
+      monthKey: d.monthKey,
+      mode: d.mode,
+      manualPool: money(d.manualPool),
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: commissionSettings.monthKey,
+      set: {
+        mode: d.mode,
+        manualPool: money(d.manualPool),
+        updatedAt: new Date(),
+      },
+    });
   refresh();
   return { ok: true };
 }

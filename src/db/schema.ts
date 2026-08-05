@@ -305,10 +305,23 @@ export const commissionPayments = pgTable(
   (t) => [index("idx_commission_payments_seller").on(t.sellerId)]
 );
 
+// Ajuste de la comisión grupal por mes ("YYYY-MM").
+// mode = 'auto'  → el bolsón se calcula de la facturación (pedidos entregados).
+// mode = 'manual'→ el bolsón es `manualPool` (monto fijo escrito a mano).
+export const commissionSettings = pgTable("commission_settings", {
+  monthKey: text("month_key").primaryKey(), // "YYYY-MM"
+  mode: text("mode").notNull().default("auto"), // 'auto' | 'manual'
+  manualPool: numeric("manual_pool", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type Referrer = typeof referrers.$inferSelect;
 export type CommissionPayment = typeof commissionPayments.$inferSelect;
+export type CommissionSettings = typeof commissionSettings.$inferSelect;
 
 // ==========================================================================
 // FASE 4 — FINANZAS / CFO

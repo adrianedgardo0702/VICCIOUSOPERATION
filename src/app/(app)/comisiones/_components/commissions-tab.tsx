@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { HandCoins, Trophy } from "lucide-react";
+import { HandCoins, Trophy, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import {
   Table,
@@ -33,7 +33,11 @@ import {
 import { formatMoney } from "@/lib/format";
 import { COMMISSION_TIERS } from "@/lib/commissions";
 import type { GroupCommission, GroupSellerShare } from "@/lib/queries/commissions";
-import { liquidateCommission, type CommissionPayoutInput } from "../actions";
+import {
+  liquidateCommission,
+  setCommissionSetting,
+  type CommissionPayoutInput,
+} from "../actions";
 
 export function GroupCommissions({
   data,
@@ -45,6 +49,7 @@ export function GroupCommissions({
   canManage: boolean;
 }) {
   const [payout, setPayout] = useState<GroupSellerShare | null>(null);
+  const isManual = data.mode === "manual";
 
   const progressPct = data.nextMin
     ? Math.min(100, Math.round((data.sales / data.nextMin) * 100))
@@ -59,20 +64,34 @@ export function GroupCommissions({
             <div>
               <p className="text-sm text-muted-foreground">
                 Facturación del mes (entregado)
+                {isManual && " · referencia"}
               </p>
               <p className="text-3xl font-bold tabular-nums">
                 {formatMoney(data.sales)}
               </p>
             </div>
             <div className="sm:text-right">
-              <p className="text-sm text-muted-foreground">Comisión del grupo</p>
+              <p className="flex items-center gap-2 text-sm text-muted-foreground sm:justify-end">
+                Comisión del grupo
+                <Badge variant={isManual ? "default" : "secondary"}>
+                  {isManual ? "Manual" : "Automático"}
+                </Badge>
+              </p>
               <p className="text-3xl font-bold tabular-nums text-emerald-600">
-                {data.pct}% · {formatMoney(data.pool)}
+                {isManual
+                  ? formatMoney(data.pool)
+                  : `${data.pct}% · ${formatMoney(data.pool)}`}
               </p>
             </div>
           </div>
 
-          {data.nextMin ? (
+          {isManual ? (
+            <p className="text-xs text-muted-foreground">
+              Bolsón fijado a mano. Cambia a{" "}
+              <span className="font-medium text-foreground">Automático</span> abajo
+              para calcularlo con los escalones según lo entregado.
+            </p>
+          ) : data.nextMin ? (
             <div className="space-y-1.5">
               <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
@@ -95,6 +114,15 @@ export function GroupCommissions({
           )}
         </CardContent>
       </Card>
+
+      {canManage && (
+        <SettingEditor
+          monthKey={data.monthKey}
+          monthLabel={monthLabel}
+          mode={data.mode}
+          manualPool={data.manualPool}
+        />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Escalones */}
@@ -227,6 +255,119 @@ export function GroupCommissions({
         />
       )}
     </div>
+  );
+}
+
+function SettingEditor({
+  monthKey,
+  monthLabel,
+  mode,
+  manualPool,
+}: {
+  monthKey: string;
+  monthLabel: string;
+  mode: "auto" | "manual";
+  manualPool: number;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [localMode, setLocalMode] = useState<"auto" | "manual">(mode);
+  const [pool, setPool] = useState(String(manualPool || ""));
+
+  function save(nextMode: "auto" | "manual") {
+    const amount = Math.max(0, Number(pool) || 0);
+    startTransition(async () => {
+      const res = await setCommissionSetting({
+        monthKey,
+        mode: nextMode,
+        manualPool: amount,
+      });
+      if (res.ok) {
+        toast.success(
+          nextMode === "manual"
+            ? "Bolsón manual guardado."
+            : "Comisión automática por escalones activada."
+        );
+      } else {
+        toast.error(res.error ?? "No se pudo guardar.");
+        setLocalMode(mode);
+      }
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Pencil className="h-4 w-4" /> Ajustar comisión — {monthLabel}
+        </CardTitle>
+        <CardDescription>
+          Mientras no sepas la facturación, fija el bolsón a mano. Cuando quieras,
+          actívalo por escalones y lo tomará de los pedidos entregados.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="inline-flex rounded-md border p-0.5">
+          <Button
+            type="button"
+            size="sm"
+            variant={localMode === "manual" ? "default" : "ghost"}
+            onClick={() => setLocalMode("manual")}
+          >
+            Bolsón manual
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={localMode === "auto" ? "default" : "ghost"}
+            onClick={() => setLocalMode("auto")}
+          >
+            Automático (escalones)
+          </Button>
+        </div>
+
+        {localMode === "manual" ? (
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="pool">Bolsón del mes ($)</Label>
+              <Input
+                id="pool"
+                type="number"
+                min={0}
+                step="0.01"
+                value={pool}
+                onChange={(e) => setPool(e.target.value)}
+                placeholder="0.00"
+                className="w-40"
+              />
+            </div>
+            <Button
+              type="button"
+              disabled={isPending}
+              onClick={() => save("manual")}
+            >
+              {isPending ? "Guardando…" : "Guardar bolsón"}
+            </Button>
+            <p className="w-full text-xs text-muted-foreground">
+              Este monto se reparte en partes iguales entre los vendedores activos.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              disabled={isPending}
+              onClick={() => save("auto")}
+            >
+              {isPending ? "Activando…" : "Usar escalones por facturación"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              El % (1–5%) sale de lo entregado en el mes y se aplica a toda la
+              facturación.
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
