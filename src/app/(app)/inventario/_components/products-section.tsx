@@ -204,6 +204,11 @@ export function ProductsSection({
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   <div className="font-medium">{formatMoney(p.price)}</div>
+                  {p.priceWholesale && Number(p.priceWholesale) > 0 && (
+                    <div className="text-xs text-sky-600">
+                      Rev/Clín: {formatMoney(p.priceWholesale)}
+                    </div>
+                  )}
                   {isPeptides && <TierLine product={p} />}
                 </TableCell>
                 <TableCell>
@@ -279,6 +284,7 @@ function ProductDialog({
       stock: Number(fd.get("stock") ?? 0),
       lowStockThreshold: Number(fd.get("lowStockThreshold") ?? 0),
       price: String(fd.get("price") ?? ""),
+      priceWholesale: String(fd.get("priceWholesale") ?? ""),
       priceTier10: String(fd.get("priceTier10") ?? ""),
       priceTier20: String(fd.get("priceTier20") ?? ""),
       priceTier50: String(fd.get("priceTier50") ?? ""),
@@ -395,6 +401,24 @@ function ProductDialog({
                 defaultValue={product?.price ?? ""}
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="priceWholesale">
+              Precio especial revendedor/clínica (1 u)
+            </Label>
+            <Input
+              id="priceWholesale"
+              name="priceWholesale"
+              type="number"
+              step="0.01"
+              min={0}
+              defaultValue={product?.priceWholesale ?? ""}
+            />
+            <p className="text-xs text-muted-foreground">
+              Opcional. Lo pagan clientes tipo revendedor y clínica. Si lo dejas
+              vacío, esos clientes usan el % de su nivel.
+            </p>
           </div>
 
           {isPeptides && (

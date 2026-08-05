@@ -97,6 +97,7 @@ const productSchema = z.object({
   lowStockThreshold: z.coerce.number().int().min(0).default(0),
   cost: z.string().optional(),
   price: z.string().optional(), // precio al detal (1 u)
+  priceWholesale: z.string().optional(), // precio especial revendedor/clínica (1 u)
   priceTier10: z.string().optional(),
   priceTier20: z.string().optional(),
   priceTier50: z.string().optional(),
@@ -130,6 +131,7 @@ export async function createProduct(
       lowStockThreshold: d.lowStockThreshold,
       cost: money(d.cost),
       price: money(d.price),
+      priceWholesale: money(d.priceWholesale),
       priceTier10: money(d.priceTier10),
       priceTier20: money(d.priceTier20),
       priceTier50: money(d.priceTier50),
@@ -169,7 +171,8 @@ export async function updateProduct(
         lowStockThreshold: d.lowStockThreshold,
         cost: money(d.cost),
         price: money(d.price),
-        priceTier10: money(d.priceTier10),
+        priceWholesale: money(d.priceWholesale),
+      priceTier10: money(d.priceTier10),
         priceTier20: money(d.priceTier20),
         priceTier50: money(d.priceTier50),
         priceTier100: money(d.priceTier100),

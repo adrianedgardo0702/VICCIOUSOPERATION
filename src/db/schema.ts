@@ -90,6 +90,9 @@ export const products = pgTable(
     cost: numeric("cost", { precision: 12, scale: 2 }),
     // `price` = precio unitario al detal (1 unidad).
     price: numeric("price", { precision: 12, scale: 2 }),
+    // Precio especial por unidad para revendedor/clínica (1 u), editable por
+    // producto. Si está, se usa para esos tipos antes que el % de su nivel.
+    priceWholesale: numeric("price_wholesale", { precision: 12, scale: 2 }),
     // Precios por unidad al por mayor por escala (solo Peptides): 10/20/50/100.
     priceTier10: numeric("price_tier10", { precision: 12, scale: 2 }),
     priceTier20: numeric("price_tier20", { precision: 12, scale: 2 }),

@@ -21,8 +21,7 @@ import {
   isBusinessId,
   orderFlowFor,
   ORDER_STATUS_META,
-  effectiveDiscount,
-  priceWithDiscount,
+  effectiveUnitPrice,
   type BusinessId,
   type OrderStatus,
 } from "@/lib/constants";
@@ -140,18 +139,20 @@ export async function createOrder(
   const resolved: Resolved[] = [];
 
   try {
-    // Descuento del cliente seleccionado (su nivel de precio). Los clientes
-    // creados al vuelo son "final" (0%).
-    let priceDiscount = 0;
+    // Precio según el cliente seleccionado: precio especial del producto,
+    // nivel de precio del tipo, o % propio. Clientes creados al vuelo = final.
+    let custType = "final";
+    let custOverride: string | null = null;
     if (d.customerId) {
       const c = await db.query.customers.findFirst({
         where: eq(customers.id, d.customerId),
       });
       if (c) {
-        const levelMap = await getPriceLevelMap();
-        priceDiscount = effectiveDiscount(c.type, c.priceDiscount, levelMap);
+        custType = c.type;
+        custOverride = c.priceDiscount;
       }
     }
+    const levelMap = await getPriceLevelMap();
 
     for (const it of d.items) {
       if (b === "nakama") {
@@ -170,7 +171,12 @@ export async function createOrder(
           blankId: blank.id,
           description: `${design.name} · ${blank.size}/${blank.color} (SKU ${design.sku})`,
           quantity: it.quantity,
-          unitPrice: priceWithDiscount(design.price, priceDiscount),
+          unitPrice: effectiveUnitPrice({
+            retail: design.price,
+            customerType: custType,
+            override: custOverride,
+            levelDiscounts: levelMap,
+          }),
         });
       } else {
         if (!it.productId) return { ok: false, error: "Selecciona un producto." };
@@ -184,7 +190,13 @@ export async function createOrder(
           blankId: null,
           description: product.unit ? `${product.name} (${product.unit})` : product.name,
           quantity: it.quantity,
-          unitPrice: priceWithDiscount(product.price, priceDiscount),
+          unitPrice: effectiveUnitPrice({
+            retail: product.price,
+            wholesale: product.priceWholesale,
+            customerType: custType,
+            override: custOverride,
+            levelDiscounts: levelMap,
+          }),
         });
       }
     }

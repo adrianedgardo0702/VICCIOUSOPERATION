@@ -86,6 +86,43 @@ export function priceWithDiscount(
   return Math.round(p * (1 - discountPct / 100) * 100) / 100;
 }
 
+// Tipos que reciben precio de mayoreo (precio especial del producto).
+export const WHOLESALE_TYPES: CustomerType[] = ["revendedor", "clinica"];
+
+function toNum(v: string | number | null | undefined): number {
+  const n = typeof v === "string" ? Number(v) : v ?? 0;
+  return Number.isNaN(n) ? 0 : n;
+}
+
+// Precio unitario efectivo para un cliente. Precedencia:
+// 1) descuento propio del cliente (%),
+// 2) precio especial del producto si el tipo es revendedor/clínica,
+// 3) precio de venta con el % del nivel del tipo.
+export function effectiveUnitPrice(opts: {
+  retail: string | number | null | undefined;
+  wholesale?: string | number | null | undefined;
+  customerType: string;
+  override?: string | number | null | undefined;
+  levelDiscounts: Record<string, number>;
+}): number {
+  const retail = toNum(opts.retail);
+  // 1) % propio del cliente
+  if (opts.override !== null && opts.override !== undefined && opts.override !== "") {
+    const ov = Number(opts.override);
+    if (!Number.isNaN(ov)) return priceWithDiscount(retail, clampPct(ov));
+  }
+  // 2) precio especial del producto (revendedor/clínica)
+  const wholesale = toNum(opts.wholesale);
+  if (
+    wholesale > 0 &&
+    WHOLESALE_TYPES.includes(opts.customerType as CustomerType)
+  ) {
+    return Math.round(wholesale * 100) / 100;
+  }
+  // 3) % del nivel del tipo
+  return priceWithDiscount(retail, clampPct(opts.levelDiscounts[opts.customerType] ?? 0));
+}
+
 // ----------------------------------------------------------------------------
 // Roles y permisos
 // ----------------------------------------------------------------------------

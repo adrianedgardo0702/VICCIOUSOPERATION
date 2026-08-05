@@ -71,6 +71,13 @@
       "when": 1785888426351,
       "tag": "0009_parched_prodigy",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785890087361,
+      "tag": "0010_yummy_phalanx",
+      "breakpoints": true
     }
   ]
 }

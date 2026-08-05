@@ -26,6 +26,7 @@ export type ProductRow = {
   lowStockThreshold: number;
   cost: string | null;
   price: string | null;
+  priceWholesale: string | null;
   priceTier10: string | null;
   priceTier20: string | null;
   priceTier50: string | null;
@@ -47,6 +48,7 @@ export async function getProducts(businessId: BusinessId): Promise<ProductRow[]>
       lowStockThreshold: products.lowStockThreshold,
       cost: products.cost,
       price: products.price,
+      priceWholesale: products.priceWholesale,
       priceTier10: products.priceTier10,
       priceTier20: products.priceTier20,
       priceTier50: products.priceTier50,

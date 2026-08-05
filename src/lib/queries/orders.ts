@@ -204,6 +204,7 @@ export async function getOrderCatalog(businessId: BusinessId) {
       sku: products.sku,
       name: products.name,
       price: products.price,
+      priceWholesale: products.priceWholesale,
       stock: products.stock,
       unit: products.unit,
     })
