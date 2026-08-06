@@ -15,19 +15,23 @@ const globalForDb = globalThis as unknown as {
   client?: ReturnType<typeof postgres>;
 };
 
-// En serverless (Vercel) cada instancia abre su propio pool; con muchas
-// instancias se agota el límite del pooler. Mantener `max` bajo y cerrar
-// conexiones ociosas evita el error EMAXCONNSESSION. `prepare:false` es
-// obligatorio con el pooler de transacciones de Supabase (puerto 6543).
-// `connect_timeout` (segundos) hace que la función falle rápido si el pooler
-// está saturado, en vez de colgarse hasta el límite de 300s de Vercel (lo que
-// retiene conexiones y agrava el atasco). Reusar el cliente entre invocaciones
-// tibias de la MISMA instancia evita abrir un pool nuevo por request.
+// Config para el pooler de TRANSACCIONES de Supabase (Supavisor, puerto 6543):
+// - `prepare:false` es obligatorio con ese pooler.
+// - `max` DEBE ser >1: el dashboard dispara varias consultas en paralelo
+//   (Promise.all) y con `max:1` todas comparten UNA conexión; postgres.js las
+//   canaliza (pipelining) y Supavisor en modo transacción se atasca → la
+//   función se cuelga hasta el límite de 300s de Vercel. Con varias conexiones
+//   cada consulta concurrente usa la suya y no colisionan. El pooler de
+//   transacciones está hecho para muchas conexiones cortas, así que es seguro.
+// - `idle_timeout` cierra conexiones ociosas; `connect_timeout` hace fallar
+//   rápido si el pooler está saturado (en vez de colgar y retener conexiones).
+// - Reusar el cliente entre invocaciones tibias de la MISMA instancia evita
+//   abrir un pool nuevo por request.
 const client =
   globalForDb.client ??
   postgres(connectionString, {
     prepare: false,
-    max: 1,
+    max: 8,
     idle_timeout: 20,
     connect_timeout: 10,
   });
