@@ -595,7 +595,9 @@ export function OrderForm({
                   items={Object.fromEntries(
                     catalog.products.map((p) => [
                       p.id,
-                      `${p.name} · ${formatMoney(p.price)} · stock ${p.stock}`,
+                      `${p.name}${p.unit ? ` ${p.unit}` : ""} · ${formatMoney(
+                        p.price
+                      )} · stock ${p.stock}`,
                     ])
                   )}
                   value={productId}
@@ -607,7 +609,14 @@ export function OrderForm({
                   <SelectContent>
                     {catalog.products.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name} · {formatMoney(p.price)} · stock {p.stock}
+                        {p.name}
+                        {p.unit ? (
+                          <span className="font-medium text-foreground">
+                            {" "}
+                            {p.unit}
+                          </span>
+                        ) : null}{" "}
+                        · {formatMoney(p.price)} · stock {p.stock}
                       </SelectItem>
                     ))}
                   </SelectContent>
