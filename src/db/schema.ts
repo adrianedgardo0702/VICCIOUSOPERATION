@@ -43,6 +43,9 @@ export const users = pgTable("users", {
   commissionValue: numeric("commission_value", { precision: 12, scale: 2 })
     .notNull()
     .default("0"),
+  // Permisos EXTRA concedidos a este usuario, además de los de su rol.
+  // null/[] = solo los de su rol. Ej: dar "inventory.manage" a un vendedor.
+  extraPermissions: text("extra_permissions").array(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

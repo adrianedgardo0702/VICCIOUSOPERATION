@@ -7,7 +7,7 @@ import { hash } from "bcryptjs";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { requirePermission } from "@/lib/session";
-import { ROLES } from "@/lib/constants";
+import { ROLES, isPermission } from "@/lib/constants";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -134,6 +134,29 @@ export async function resetPassword(
   await db
     .update(users)
     .set({ passwordHash, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+  refresh();
+  return { ok: true };
+}
+
+// -------------------------------------------------------------------------
+// Permisos extra por usuario (se suman a los de su rol)
+// -------------------------------------------------------------------------
+export async function setUserPermissions(
+  userId: string,
+  permissions: string[]
+): Promise<ActionResult> {
+  await requirePermission("users.manage");
+
+  const target = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!target) return { ok: false, error: "Usuario no encontrado." };
+
+  // Solo permisos válidos y únicos.
+  const clean = [...new Set(permissions.filter(isPermission))];
+
+  await db
+    .update(users)
+    .set({ extraPermissions: clean, updatedAt: new Date() })
     .where(eq(users.id, userId));
   refresh();
   return { ok: true };

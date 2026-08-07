@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { KeyRound, Pencil, Plus, Power, Trash2 } from "lucide-react";
+import { KeyRound, Pencil, Plus, Power, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Table,
@@ -41,7 +41,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ROLES, ROLE_LABELS, type Role } from "@/lib/constants";
+import {
+  ROLES,
+  ROLE_LABELS,
+  GRANTABLE_PERMISSIONS,
+  permissionsForRole,
+  type Role,
+} from "@/lib/constants";
 import { SELLER_COMMISSION_TYPES, commissionLabel } from "@/lib/commissions";
 import type { UserRow } from "@/lib/queries/users";
 import {
@@ -49,6 +55,7 @@ import {
   updateUser,
   resetPassword,
   setUserActive,
+  setUserPermissions,
   deleteUser,
   type CreateUserInput,
   type UpdateUserInput,
@@ -72,6 +79,7 @@ export function UsersManager({
   const [createOpen, setCreateOpen] = useState(false);
   const [edit, setEdit] = useState<UserRow | null>(null);
   const [pwd, setPwd] = useState<UserRow | null>(null);
+  const [perm, setPerm] = useState<UserRow | null>(null);
 
   return (
     <div className="space-y-4">
@@ -93,7 +101,7 @@ export function UsersManager({
               <TableHead>Comisión</TableHead>
               <TableHead className="text-center">Pedidos</TableHead>
               <TableHead className="text-center">Estado</TableHead>
-              {canManage && <TableHead className="w-[160px]" />}
+              {canManage && <TableHead className="w-[200px]" />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -151,6 +159,17 @@ export function UsersManager({
                       >
                         <KeyRound className="h-4 w-4" />
                       </Button>
+                      {u.role !== "admin" && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          title="Permisos"
+                          onClick={() => setPerm(u)}
+                        >
+                          <ShieldCheck className="h-4 w-4" />
+                        </Button>
+                      )}
                       <ToggleActive user={u} currentUserId={currentUserId} />
                       <DeleteUser user={u} currentUserId={currentUserId} />
                     </div>
@@ -186,7 +205,104 @@ export function UsersManager({
           onOpenChange={(o) => !o && setPwd(null)}
         />
       )}
+      {canManage && perm && (
+        <PermissionsDialog
+          key={`perm-${perm.id}`}
+          user={perm}
+          open
+          onOpenChange={(o) => !o && setPerm(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function PermissionsDialog({
+  user,
+  open,
+  onOpenChange,
+}: {
+  user: UserRow;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const rolePerms = new Set(permissionsForRole(user.role as Role));
+  const [granted, setGranted] = useState<Set<string>>(
+    new Set(user.extraPermissions)
+  );
+
+  function toggle(p: string) {
+    setGranted((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
+    });
+  }
+
+  function save() {
+    startTransition(async () => {
+      const res = await setUserPermissions(user.id, [...granted]);
+      if (res.ok) {
+        toast.success("Permisos actualizados.");
+        onOpenChange(false);
+      } else toast.error(res.error);
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Permisos de {user.name}</DialogTitle>
+          <DialogDescription>
+            Rol: {ROLE_LABELS[user.role as Role] ?? user.role}. Marca permisos
+            adicionales; los que ya trae su rol quedan fijos. El cambio aplica la
+            próxima vez que el usuario cargue una página.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[55vh] space-y-2 overflow-y-auto py-1">
+          {GRANTABLE_PERMISSIONS.map((p) => {
+            const byRole = rolePerms.has(p.value);
+            const checked = byRole || granted.has(p.value);
+            return (
+              <label
+                key={p.value}
+                className={`flex items-center gap-3 rounded-lg border p-2.5 text-sm ${
+                  byRole ? "opacity-70" : "cursor-pointer hover:bg-muted"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={byRole || isPending}
+                  onChange={() => toggle(p.value)}
+                  className="h-4 w-4 accent-violet-600"
+                />
+                <span className="flex-1">{p.label}</span>
+                {byRole ? (
+                  <Badge variant="secondary" className="text-muted-foreground">
+                    por su rol
+                  </Badge>
+                ) : (
+                  granted.has(p.value) && (
+                    <Badge variant="secondary" className="text-violet-600">
+                      concedido
+                    </Badge>
+                  )
+                )}
+              </label>
+            );
+          })}
+        </div>
+        <DialogFooter>
+          <Button onClick={save} disabled={isPending}>
+            {isPending ? "Guardando…" : "Guardar permisos"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

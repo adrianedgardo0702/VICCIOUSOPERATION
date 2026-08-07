@@ -10,12 +10,13 @@ export type UserRow = {
   active: boolean;
   commissionType: string;
   commissionValue: string;
+  extraPermissions: string[];
   ordersCount: number;
   createdAt: Date;
 };
 
 export async function getUsers(): Promise<UserRow[]> {
-  return db
+  const rows = await db
     .select({
       id: users.id,
       name: users.name,
@@ -24,6 +25,7 @@ export async function getUsers(): Promise<UserRow[]> {
       active: users.active,
       commissionType: users.commissionType,
       commissionValue: users.commissionValue,
+      extraPermissions: users.extraPermissions,
       ordersCount: sql<number>`count(${orders.id})::int`,
       createdAt: users.createdAt,
     })
@@ -31,6 +33,8 @@ export async function getUsers(): Promise<UserRow[]> {
     .leftJoin(orders, eq(orders.sellerId, users.id))
     .groupBy(users.id)
     .orderBy(asc(users.name));
+
+  return rows.map((r) => ({ ...r, extraPermissions: r.extraPermissions ?? [] }));
 }
 
 // Cantidad de administradores activos (para evitar quedarse sin admin).

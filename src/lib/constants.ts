@@ -204,6 +204,37 @@ export function permissionsForRole(role: Role): Permission[] {
   return perms;
 }
 
+export function isPermission(v: string): v is Permission {
+  return (PERMISSIONS as readonly string[]).includes(v);
+}
+
+// Chequeo efectivo: los del rol MÁS los permisos extra concedidos al usuario.
+export function hasPermissionWith(
+  role: Role,
+  extra: readonly string[] | null | undefined,
+  permission: Permission
+): boolean {
+  if (hasPermission(role, permission)) return true;
+  return !!extra?.includes(permission);
+}
+
+// Permisos que el admin puede conceder por usuario (con etiqueta legible).
+// No se listan los que todos ya tienen (dashboard.view) ni cosas sin sentido.
+export const GRANTABLE_PERMISSIONS: { value: Permission; label: string }[] = [
+  { value: "inventory.view", label: "Ver inventario" },
+  { value: "inventory.manage", label: "Añadir / editar inventario" },
+  { value: "orders.manage", label: "Crear / editar pedidos" },
+  { value: "orders.production", label: "Producción / preparación" },
+  { value: "customers.manage", label: "Gestionar clientes" },
+  { value: "shipping.manage", label: "Gestionar envíos" },
+  { value: "finance.view", label: "Ver finanzas" },
+  { value: "finance.manage", label: "Gestionar finanzas" },
+  { value: "commissions.manage", label: "Gestionar comisiones" },
+  { value: "referrals.manage", label: "Gestionar referidos" },
+  { value: "users.view", label: "Ver usuarios" },
+  { value: "users.manage", label: "Gestionar usuarios" },
+];
+
 // ----------------------------------------------------------------------------
 // Inventario
 // ----------------------------------------------------------------------------
