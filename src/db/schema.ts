@@ -348,6 +348,39 @@ export const financeTransactions = pgTable(
   (t) => [index("idx_tx_business").on(t.businessId), index("idx_tx_date").on(t.date)]
 );
 
+// Compras / recompras de inventario (productos de Supplements/Peptides).
+// Suben el stock del producto y (si aplica) generan un egreso enlazado en caja.
+export const inventoryPurchases = pgTable(
+  "inventory_purchases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: text("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").references(() => products.id, {
+      onDelete: "set null",
+    }),
+    description: text("description").notNull(), // snapshot del nombre
+    quantity: integer("quantity").notNull(),
+    unitCost: numeric("unit_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+    totalCost: numeric("total_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+    supplier: text("supplier"),
+    note: text("note"),
+    // Egreso en caja generado por esta compra (para poder revertirlo al borrar).
+    financeTxId: uuid("finance_tx_id").references(() => financeTransactions.id, {
+      onDelete: "set null",
+    }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_inventory_purchases_business").on(t.businessId),
+    index("idx_inventory_purchases_product").on(t.productId),
+  ]
+);
+
+export type InventoryPurchase = typeof inventoryPurchases.$inferSelect;
+
 // Deudas (a nivel empresa; compartidas entre negocios).
 export const debts = pgTable("debts", {
   id: uuid("id").primaryKey().defaultRandom(),

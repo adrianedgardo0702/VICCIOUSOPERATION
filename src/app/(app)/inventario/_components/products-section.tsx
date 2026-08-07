@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Pencil, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Table,
@@ -44,7 +44,7 @@ import {
 import { formatMoney } from "@/lib/format";
 import type { ProductCategory } from "@/db/schema";
 import type { BusinessId } from "@/lib/constants";
-import type { ProductRow } from "@/lib/queries/inventory";
+import type { ProductRow, PurchaseRow } from "@/lib/queries/inventory";
 import { CategoryManager } from "./category-manager";
 import { StockCell } from "./stock-cell";
 import {
@@ -52,7 +52,10 @@ import {
   createProduct,
   deleteProduct,
   updateProduct,
+  recordPurchase,
+  deletePurchase,
   type ProductInput,
+  type PurchaseInput,
 } from "../actions";
 
 const NONE = "__none__";
@@ -61,11 +64,13 @@ export function ProductsSection({
   businessId,
   products,
   categories,
+  purchases,
   canManage,
 }: {
   businessId: BusinessId;
   products: ProductRow[];
   categories: ProductCategory[];
+  purchases: PurchaseRow[];
   canManage: boolean;
 }) {
   const [search, setSearch] = useState("");
@@ -73,6 +78,7 @@ export function ProductsSection({
   const [dialog, setDialog] = useState<{ open: boolean; product?: ProductRow }>({
     open: false,
   });
+  const [buyOpen, setBuyOpen] = useState(false);
 
   const isPeptides = businessId === "peptides";
 
@@ -156,6 +162,14 @@ export function ProductsSection({
         {canManage && (
           <>
             <CategoryManager businessId={businessId} categories={categories} />
+            <Button
+              variant="outline"
+              onClick={() => setBuyOpen(true)}
+              disabled={products.length === 0}
+            >
+              <ShoppingCart className="mr-2 h-4 w-4" />
+              Comprar / Recompra
+            </Button>
             <Button onClick={() => setDialog({ open: true })}>
               <Plus className="mr-2 h-4 w-4" />
               Producto
@@ -243,6 +257,89 @@ export function ProductsSection({
         </Table>
       </div>
 
+      {/* Historial de compras / recompras */}
+      {(purchases.length > 0 || canManage) && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">Compras / recompras</h3>
+          </div>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Producto</TableHead>
+                  <TableHead className="text-center">Cant.</TableHead>
+                  <TableHead className="text-right">Costo u.</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead>Proveedor</TableHead>
+                  {canManage && <TableHead className="w-[48px]" />}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {purchases.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={canManage ? 7 : 6}
+                      className="h-20 text-center text-muted-foreground"
+                    >
+                      Aún no hay compras registradas.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {purchases.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                      {new Intl.DateTimeFormat("es-PA", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        timeZone: "UTC",
+                      }).format(new Date(p.createdAt))}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {p.description}
+                      {p.note && (
+                        <div className="text-xs font-normal text-muted-foreground">
+                          {p.note}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums">
+                      +{p.quantity}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatMoney(p.unitCost)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {formatMoney(p.totalCost)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {p.supplier ?? "—"}
+                    </TableCell>
+                    {canManage && (
+                      <TableCell>
+                        <DeleteButton
+                          name={`compra de ${p.quantity} × ${p.description}`}
+                          onConfirm={() => deletePurchase(p.id)}
+                        />
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {canManage && (
+            <p className="text-xs text-muted-foreground">
+              Cada compra suma al stock y registra un egreso “Compra de inventario”
+              en Finanzas. Al eliminarla se revierte el stock y el egreso.
+            </p>
+          )}
+        </div>
+      )}
+
       {canManage && (
         <ProductDialog
           key={dialog.product?.id ?? "new"}
@@ -253,7 +350,157 @@ export function ProductsSection({
           onOpenChange={(open) => setDialog({ open })}
         />
       )}
+      {canManage && (
+        <PurchaseDialog
+          businessId={businessId}
+          products={products}
+          open={buyOpen}
+          onOpenChange={setBuyOpen}
+        />
+      )}
     </div>
+  );
+}
+
+function PurchaseDialog({
+  businessId,
+  products,
+  open,
+  onOpenChange,
+}: {
+  businessId: BusinessId;
+  products: ProductRow[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [productId, setProductId] = useState<string | null>(null);
+  const [qty, setQty] = useState("1");
+  const [unitCost, setUnitCost] = useState("");
+
+  const selected = products.find((p) => p.id === productId);
+  const total =
+    (Math.max(0, Number(qty) || 0) * Math.max(0, Number(unitCost) || 0)) || 0;
+
+  function pick(id: string | null) {
+    setProductId(id);
+    const p = id ? products.find((x) => x.id === id) : undefined;
+    // Prefill con el costo actual del producto (editable).
+    if (p && p.cost != null && p.cost !== "") setUnitCost(String(p.cost));
+  }
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!productId) {
+      toast.error("Elige un producto.");
+      return;
+    }
+    const fd = new FormData(e.currentTarget);
+    const input: PurchaseInput = {
+      productId,
+      quantity: Number(qty) || 0,
+      unitCost: Number(unitCost) || 0,
+      supplier: String(fd.get("supplier") ?? ""),
+      note: String(fd.get("note") ?? ""),
+    };
+    startTransition(async () => {
+      const res = await recordPurchase(businessId, input);
+      if (res.ok) {
+        toast.success("Compra registrada. Stock y finanzas actualizados.");
+        setProductId(null);
+        setQty("1");
+        setUnitCost("");
+        onOpenChange(false);
+      } else toast.error(res.error);
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Comprar / recompra de inventario</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Producto *</Label>
+            <Select
+              items={Object.fromEntries(
+                products.map((p) => [p.id, `${p.name} · stock ${p.stock}`])
+              )}
+              value={productId}
+              onValueChange={(v) => pick(v ?? null)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Elige un producto" />
+              </SelectTrigger>
+              <SelectContent>
+                {products.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} · stock {p.stock}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="qty">Cantidad comprada *</Label>
+              <Input
+                id="qty"
+                type="number"
+                min={1}
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="unitCost">Costo por unidad *</Label>
+              <Input
+                id="unitCost"
+                type="number"
+                step="0.01"
+                min={0}
+                value={unitCost}
+                onChange={(e) => setUnitCost(e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="supplier">Proveedor (opcional)</Label>
+              <Input id="supplier" name="supplier" placeholder="Dónde lo compraste" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="note">Nota (opcional)</Label>
+              <Input id="note" name="note" placeholder="Lote, detalle…" />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3 text-sm">
+            <span className="text-muted-foreground">Total de la compra (egreso)</span>
+            <span className="text-lg font-bold tabular-nums">
+              {formatMoney(total)}
+            </span>
+          </div>
+          {selected && (
+            <p className="text-xs text-muted-foreground">
+              El stock de <span className="font-medium">{selected.name}</span> pasará
+              de {selected.stock} a {selected.stock + (Number(qty) || 0)}.
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Registrando…" : "Registrar compra"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

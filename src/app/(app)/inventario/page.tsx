@@ -7,6 +7,7 @@ import {
   getNakamaBlanks,
   getNakamaDesigns,
   getProducts,
+  getPurchases,
 } from "@/lib/queries/inventory";
 import { InventoryOverview } from "./_components/inventory-overview";
 import { NakamaInventory } from "./_components/nakama-inventory";
@@ -46,6 +47,7 @@ export default async function InventarioPage() {
           businessId={scope}
           products={await getProducts(scope)}
           categories={await getCategories(scope)}
+          purchases={await getPurchases(scope)}
           canManage={canManage}
         />
       )}

@@ -9,6 +9,8 @@ import {
   products,
   nakamaBlanks,
   nakamaDesigns,
+  inventoryPurchases,
+  financeTransactions,
 } from "@/db/schema";
 import { requirePermission } from "@/lib/session";
 import { isBusinessId, type BusinessId } from "@/lib/constants";
@@ -25,6 +27,12 @@ async function guard() {
 
 function refresh() {
   revalidatePath("/inventario");
+}
+
+function refreshWithFinance() {
+  revalidatePath("/inventario");
+  revalidatePath("/finanzas");
+  revalidatePath("/dashboard");
 }
 
 // Convierte texto a decimal string o null.
@@ -210,6 +218,125 @@ export async function adjustProductStock(
     .where(eq(products.id, id));
   refresh();
   return ok;
+}
+
+// -------------------------------------------------------------------------
+// Compras / recompras de inventario (Supplements / Peptides)
+// Sube el stock, actualiza el costo (promedio ponderado) y registra el egreso.
+// -------------------------------------------------------------------------
+const purchaseSchema = z.object({
+  productId: z.string().uuid("Selecciona un producto."),
+  quantity: z.coerce.number().int().min(1, "La cantidad debe ser al menos 1."),
+  unitCost: z.coerce.number().min(0, "El costo no puede ser negativo."),
+  supplier: z.string().trim().optional(),
+  note: z.string().trim().optional(),
+});
+
+export type PurchaseInput = z.input<typeof purchaseSchema>;
+
+export async function recordPurchase(
+  businessId: string,
+  input: PurchaseInput
+): Promise<ActionResult> {
+  const user = await requirePermission("inventory.manage");
+  const b = assertBusiness(businessId);
+  const parsed = purchaseSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Datos inválidos.");
+  const d = parsed.data;
+
+  const product = await db.query.products.findFirst({
+    where: and(eq(products.id, d.productId), eq(products.businessId, b)),
+  });
+  if (!product) return fail("Producto inválido.");
+
+  const totalCost = Math.round(d.quantity * d.unitCost * 100) / 100;
+  // Costo promedio ponderado: mezcla el stock previo (a su costo) con lo comprado.
+  const prevStock = product.stock;
+  const prevCost = product.cost != null ? Number(product.cost) : d.unitCost;
+  const newStock = prevStock + d.quantity;
+  const avgCost =
+    newStock > 0
+      ? (prevStock * prevCost + d.quantity * d.unitCost) / newStock
+      : d.unitCost;
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(products)
+        .set({
+          stock: sql`${products.stock} + ${d.quantity}`,
+          cost: avgCost.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(products.id, product.id));
+
+      // Egreso en caja (enlazado, para poder revertirlo al borrar la compra).
+      const [tx0] = await tx
+        .insert(financeTransactions)
+        .values({
+          businessId: b,
+          type: "expense",
+          category: "Compra de inventario",
+          description: `${d.quantity} × ${product.name}${
+            d.supplier ? ` · ${d.supplier}` : ""
+          }`,
+          amount: totalCost.toFixed(2),
+          date: new Date(),
+        })
+        .returning({ id: financeTransactions.id });
+
+      await tx.insert(inventoryPurchases).values({
+        businessId: b,
+        productId: product.id,
+        description: product.name,
+        quantity: d.quantity,
+        unitCost: d.unitCost.toFixed(2),
+        totalCost: totalCost.toFixed(2),
+        supplier: d.supplier || null,
+        note: d.note || null,
+        financeTxId: tx0.id,
+        createdBy: user.id,
+      });
+    });
+    refreshWithFinance();
+    return ok;
+  } catch {
+    return fail("No se pudo registrar la compra.");
+  }
+}
+
+export async function deletePurchase(id: string): Promise<ActionResult> {
+  await guard();
+  const purchase = await db.query.inventoryPurchases.findFirst({
+    where: eq(inventoryPurchases.id, id),
+  });
+  if (!purchase) return fail("Compra no encontrada.");
+
+  try {
+    await db.transaction(async (tx) => {
+      // Revierte el stock si el producto sigue existiendo.
+      if (purchase.productId) {
+        await tx
+          .update(products)
+          .set({
+            stock: sql`greatest(0, ${products.stock} - ${purchase.quantity})`,
+            updatedAt: new Date(),
+          })
+          .where(eq(products.id, purchase.productId));
+      }
+      // Quita el egreso enlazado.
+      if (purchase.financeTxId) {
+        await tx
+          .delete(financeTransactions)
+          .where(eq(financeTransactions.id, purchase.financeTxId));
+      }
+      await tx.delete(inventoryPurchases).where(eq(inventoryPurchases.id, id));
+    });
+    refreshWithFinance();
+    return ok;
+  } catch {
+    return fail("No se pudo eliminar la compra.");
+  }
 }
 
 // -------------------------------------------------------------------------

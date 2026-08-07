@@ -1,12 +1,52 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   productCategories,
   products,
   nakamaBlanks,
   nakamaDesigns,
+  inventoryPurchases,
+  users,
 } from "@/db/schema";
 import type { BusinessId } from "@/lib/constants";
+
+export type PurchaseRow = {
+  id: string;
+  productId: string | null;
+  description: string;
+  quantity: number;
+  unitCost: string;
+  totalCost: string;
+  supplier: string | null;
+  note: string | null;
+  buyerName: string | null;
+  createdAt: Date;
+};
+
+// Historial de compras/recompras de un negocio (más recientes primero).
+export async function getPurchases(
+  businessId: BusinessId,
+  limit = 50
+): Promise<PurchaseRow[]> {
+  return db
+    .select({
+      id: inventoryPurchases.id,
+      productId: inventoryPurchases.productId,
+      description: inventoryPurchases.description,
+      quantity: inventoryPurchases.quantity,
+      unitCost: inventoryPurchases.unitCost,
+      totalCost: inventoryPurchases.totalCost,
+      supplier: inventoryPurchases.supplier,
+      note: inventoryPurchases.note,
+      buyerName: users.name,
+      createdAt: inventoryPurchases.createdAt,
+    })
+    .from(inventoryPurchases)
+    .leftJoin(users, eq(users.id, inventoryPurchases.createdBy))
+    .where(eq(inventoryPurchases.businessId, businessId))
+    .orderBy(desc(inventoryPurchases.createdAt))
+    .limit(limit);
+}
 
 export async function getCategories(businessId: BusinessId) {
   return db
