@@ -1,7 +1,8 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, sql, type Column } from "drizzle-orm";
 import { db } from "@/db";
 import { orders, financeTransactions, debts } from "@/db/schema";
 import type { BusinessScope } from "@/lib/business";
+import type { DateRange } from "@/lib/period";
 
 // Condición de negocio para pedidos.
 function ordersBiz(scope: BusinessScope) {
@@ -13,6 +14,17 @@ function txBiz(scope: BusinessScope) {
   return scope === "all" ? undefined : eq(financeTransactions.businessId, scope);
 }
 
+// Rango de fechas para usar DENTRO de un `filter (where …)` agregado.
+// Se pasan como ISO string + cast (evita el problema de postgres.js con Date).
+function inRange(col: Column, range?: DateRange | null) {
+  if (!range) return sql``;
+  return sql` and ${col} >= ${range.start.toISOString()}::timestamptz and ${col} < ${range.end.toISOString()}::timestamptz`;
+}
+// Rango para usar en un WHERE normal (operadores, admiten Date).
+function whereRange(col: Column, range?: DateRange | null) {
+  return range ? and(gte(col, range.start), lt(col, range.end)) : undefined;
+}
+
 export type CashFlow = {
   salesIncome: number;
   manualIncome: number;
@@ -22,24 +34,31 @@ export type CashFlow = {
   totalIncome: number;
   totalExpense: number;
   balance: number;
-  pendingSales: number; // ventas de pedidos no entregados (esperado)
+  pendingSales: number; // ventas de pedidos no entregados (esperado) — snapshot actual
+  ordersCount: number; // pedidos entregados en el periodo (para ticket promedio)
 };
 
-export async function getCashFlow(scope: BusinessScope): Promise<CashFlow> {
+// `range` acota los ingresos/egresos del periodo. `pendingSales` es siempre el
+// pendiente actual (snapshot), no depende del periodo.
+export async function getCashFlow(
+  scope: BusinessScope,
+  range?: DateRange | null
+): Promise<CashFlow> {
   const [ordersAgg] = await db
     .select({
-      sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} = 'entregado'), 0)::text`,
-      referral: sql<string>`coalesce(sum(${orders.referralCommission}) filter (where ${orders.status} = 'entregado'), 0)::text`,
-      shipping: sql<string>`coalesce(sum(${orders.shippingCompanyCost}) filter (where ${orders.status} = 'entregado'), 0)::text`,
+      sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
+      referral: sql<string>`coalesce(sum(${orders.referralCommission}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
+      shipping: sql<string>`coalesce(sum(${orders.shippingCompanyCost}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
       pending: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} not in ('entregado','cancelado')), 0)::text`,
+      ordersCount: sql<number>`(count(*) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}))::int`,
     })
     .from(orders)
     .where(ordersBiz(scope));
 
   const [txAgg] = await db
     .select({
-      income: sql<string>`coalesce(sum(${financeTransactions.amount}) filter (where ${financeTransactions.type} = 'income'), 0)::text`,
-      expense: sql<string>`coalesce(sum(${financeTransactions.amount}) filter (where ${financeTransactions.type} = 'expense'), 0)::text`,
+      income: sql<string>`coalesce(sum(${financeTransactions.amount}) filter (where ${financeTransactions.type} = 'income'${inRange(financeTransactions.date, range)}), 0)::text`,
+      expense: sql<string>`coalesce(sum(${financeTransactions.amount}) filter (where ${financeTransactions.type} = 'expense'${inRange(financeTransactions.date, range)}), 0)::text`,
     })
     .from(financeTransactions)
     .where(txBiz(scope));
@@ -63,6 +82,7 @@ export async function getCashFlow(scope: BusinessScope): Promise<CashFlow> {
     totalExpense,
     balance: totalIncome - totalExpense,
     pendingSales: Number(ordersAgg?.pending ?? 0),
+    ordersCount: Number(ordersAgg?.ordersCount ?? 0),
   };
 }
 
@@ -84,13 +104,16 @@ export type PLBreakdown = {
   general: { income: number; expense: number }; // movimientos sin negocio
 };
 
-export async function getPerBusinessPL(scope: BusinessScope): Promise<PLBreakdown> {
+export async function getPerBusinessPL(
+  scope: BusinessScope,
+  range?: DateRange | null
+): Promise<PLBreakdown> {
   const orderRows = await db
     .select({
       businessId: orders.businessId,
-      sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} = 'entregado'), 0)::text`,
-      referral: sql<string>`coalesce(sum(${orders.referralCommission}) filter (where ${orders.status} = 'entregado'), 0)::text`,
-      shipping: sql<string>`coalesce(sum(${orders.shippingCompanyCost}) filter (where ${orders.status} = 'entregado'), 0)::text`,
+      sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
+      referral: sql<string>`coalesce(sum(${orders.referralCommission}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
+      shipping: sql<string>`coalesce(sum(${orders.shippingCompanyCost}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
       pending: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} not in ('entregado','cancelado')), 0)::text`,
     })
     .from(orders)
@@ -100,8 +123,8 @@ export async function getPerBusinessPL(scope: BusinessScope): Promise<PLBreakdow
   const txRows = await db
     .select({
       businessId: financeTransactions.businessId,
-      expense: sql<string>`coalesce(sum(${financeTransactions.amount}) filter (where ${financeTransactions.type} = 'expense'), 0)::text`,
-      income: sql<string>`coalesce(sum(${financeTransactions.amount}) filter (where ${financeTransactions.type} = 'income'), 0)::text`,
+      expense: sql<string>`coalesce(sum(${financeTransactions.amount}) filter (where ${financeTransactions.type} = 'expense'${inRange(financeTransactions.date, range)}), 0)::text`,
+      income: sql<string>`coalesce(sum(${financeTransactions.amount}) filter (where ${financeTransactions.type} = 'income'${inRange(financeTransactions.date, range)}), 0)::text`,
     })
     .from(financeTransactions)
     .where(txBiz(scope))
@@ -153,37 +176,43 @@ export async function getPerBusinessPL(scope: BusinessScope): Promise<PLBreakdow
 }
 
 // Movimientos manuales agrupados por categoría (para el desglose fino).
-export type CategoryAmount = { category: string; amount: number };
+export type CategoryAmount = { category: string; amount: number; count: number };
 
 export async function getTxByCategory(
-  scope: BusinessScope
+  scope: BusinessScope,
+  range?: DateRange | null
 ): Promise<{ income: CategoryAmount[]; expense: CategoryAmount[] }> {
   const rows = await db
     .select({
       category: financeTransactions.category,
       type: financeTransactions.type,
       amount: sql<string>`coalesce(sum(${financeTransactions.amount}), 0)::text`,
+      count: sql<number>`count(*)::int`,
     })
     .from(financeTransactions)
-    .where(txBiz(scope))
+    .where(and(txBiz(scope), whereRange(financeTransactions.date, range)))
     .groupBy(financeTransactions.category, financeTransactions.type)
     .orderBy(desc(sql`sum(${financeTransactions.amount})`));
 
   return {
     income: rows
       .filter((r) => r.type === "income")
-      .map((r) => ({ category: r.category, amount: Number(r.amount) })),
+      .map((r) => ({ category: r.category, amount: Number(r.amount), count: r.count })),
     expense: rows
       .filter((r) => r.type === "expense")
-      .map((r) => ({ category: r.category, amount: Number(r.amount) })),
+      .map((r) => ({ category: r.category, amount: Number(r.amount), count: r.count })),
   };
 }
 
-export async function getTransactions(scope: BusinessScope, limit = 50) {
+export async function getTransactions(
+  scope: BusinessScope,
+  range?: DateRange | null,
+  limit = 100
+) {
   return db
     .select()
     .from(financeTransactions)
-    .where(txBiz(scope))
+    .where(and(txBiz(scope), whereRange(financeTransactions.date, range)))
     .orderBy(desc(financeTransactions.date))
     .limit(limit);
 }

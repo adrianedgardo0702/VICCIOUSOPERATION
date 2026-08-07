@@ -7,6 +7,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { BarsChart, type BarsPoint } from "@/components/charts/bars-chart";
+import { DonutChart, DonutLegend, type DonutSegment } from "@/components/charts/donut-chart";
 import { getBusiness } from "@/lib/constants";
 import { formatMoney } from "@/lib/format";
 import type { PLBreakdown } from "@/lib/queries/finance";
@@ -20,6 +21,7 @@ export function BreakdownTab({
   totalIncome,
   totalExpense,
   trend,
+  businessSeg,
 }: {
   pl: PLBreakdown;
   incomeItems: BreakdownItem[];
@@ -27,7 +29,10 @@ export function BreakdownTab({
   totalIncome: number;
   totalExpense: number;
   trend: BarsPoint[];
+  businessSeg: DonutSegment[];
 }) {
+  const incomeSeg = incomeItems.filter((i) => i.value > 0);
+  const expenseSeg = expenseItems.filter((i) => i.value > 0);
   const totals = pl.businesses.reduce(
     (a, b) => ({
       sales: a.sales + b.sales,
@@ -43,12 +48,36 @@ export function BreakdownTab({
 
   return (
     <div className="space-y-5">
+      {/* Donas de composición */}
+      <div className="grid gap-5 lg:grid-cols-3">
+        <DonutCard
+          title="Ingresos"
+          segments={incomeSeg}
+          total={totalIncome}
+          empty="Sin ingresos en el periodo."
+        />
+        <DonutCard
+          title="Egresos"
+          segments={expenseSeg}
+          total={totalExpense}
+          empty="Sin egresos en el periodo."
+        />
+        <DonutCard
+          title="Ventas por negocio"
+          segments={businessSeg}
+          total={businessSeg.reduce((s, x) => s + x.value, 0)}
+          empty="Sin ventas en el periodo."
+        />
+      </div>
+
       {/* Ingresos vs egresos */}
       <section className="card-soft p-5">
         <div className="mb-3 flex items-center justify-between">
           <div>
             <h3 className="text-base font-semibold">Ingresos vs egresos</h3>
-            <p className="text-xs text-muted-foreground">Últimos 6 meses</p>
+            <p className="text-xs text-muted-foreground">
+              Tendencia de los últimos 6 meses
+            </p>
           </div>
           <div className="flex gap-4 text-xs">
             <Legend color="#059669" label="Ingresos" />
@@ -253,6 +282,38 @@ function BreakdownList({
             );
           })}
         </ul>
+      )}
+    </section>
+  );
+}
+
+function DonutCard({
+  title,
+  segments,
+  total,
+  empty,
+}: {
+  title: string;
+  segments: DonutSegment[];
+  total: number;
+  empty: string;
+}) {
+  return (
+    <section className="card-soft p-5">
+      <h3 className="mb-3 text-base font-semibold">{title}</h3>
+      {segments.length === 0 ? (
+        <p className="py-10 text-center text-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <div className="flex flex-col items-center gap-5">
+          <DonutChart
+            segments={segments}
+            centerTop="Total"
+            centerValue={formatMoney(total)}
+          />
+          <div className="w-full">
+            <DonutLegend segments={segments} />
+          </div>
+        </div>
       )}
     </section>
   );
