@@ -59,6 +59,7 @@ import {
 } from "../actions";
 
 const NONE = "__none__";
+const NEW_PRODUCT = "__new_product__";
 
 export function ProductsSection({
   businessId,
@@ -162,11 +163,7 @@ export function ProductsSection({
         {canManage && (
           <>
             <CategoryManager businessId={businessId} categories={categories} />
-            <Button
-              variant="outline"
-              onClick={() => setBuyOpen(true)}
-              disabled={products.length === 0}
-            >
+            <Button variant="outline" onClick={() => setBuyOpen(true)}>
               <ShoppingCart className="mr-2 h-4 w-4" />
               Comprar / Recompra
             </Button>
@@ -375,15 +372,23 @@ function PurchaseDialog({
 }) {
   const [isPending, startTransition] = useTransition();
   const [productId, setProductId] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newUnit, setNewUnit] = useState("");
   const [qty, setQty] = useState("1");
   const [unitCost, setUnitCost] = useState("");
 
-  const selected = products.find((p) => p.id === productId);
+  const isNew = productId === NEW_PRODUCT;
+  const selected =
+    productId && !isNew ? products.find((p) => p.id === productId) : undefined;
   const total =
     (Math.max(0, Number(qty) || 0) * Math.max(0, Number(unitCost) || 0)) || 0;
 
   function pick(id: string | null) {
     setProductId(id);
+    if (id === NEW_PRODUCT) {
+      setUnitCost("");
+      return;
+    }
     const p = id ? products.find((x) => x.id === id) : undefined;
     // Prefill con el costo actual del producto (editable).
     if (p && p.cost != null && p.cost !== "") setUnitCost(String(p.cost));
@@ -392,12 +397,18 @@ function PurchaseDialog({
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!productId) {
-      toast.error("Elige un producto.");
+      toast.error("Elige un producto o crea uno nuevo.");
+      return;
+    }
+    if (isNew && !newName.trim()) {
+      toast.error("Escribe el nombre del producto nuevo.");
       return;
     }
     const fd = new FormData(e.currentTarget);
     const input: PurchaseInput = {
-      productId,
+      productId: isNew ? null : productId,
+      newProductName: isNew ? newName.trim() : undefined,
+      unit: isNew ? newUnit.trim() : undefined,
       quantity: Number(qty) || 0,
       unitCost: Number(unitCost) || 0,
       supplier: String(fd.get("supplier") ?? ""),
@@ -406,8 +417,14 @@ function PurchaseDialog({
     startTransition(async () => {
       const res = await recordPurchase(businessId, input);
       if (res.ok) {
-        toast.success("Compra registrada. Stock y finanzas actualizados.");
+        toast.success(
+          isNew
+            ? "Producto creado y compra registrada."
+            : "Compra registrada. Stock y finanzas actualizados."
+        );
         setProductId(null);
+        setNewName("");
+        setNewUnit("");
         setQty("1");
         setUnitCost("");
         onOpenChange(false);
@@ -425,16 +442,22 @@ function PurchaseDialog({
           <div className="space-y-2">
             <Label>Producto *</Label>
             <Select
-              items={Object.fromEntries(
-                products.map((p) => [p.id, `${p.name} · stock ${p.stock}`])
-              )}
+              items={{
+                [NEW_PRODUCT]: "➕ Nuevo producto (no está en la lista)",
+                ...Object.fromEntries(
+                  products.map((p) => [p.id, `${p.name} · stock ${p.stock}`])
+                ),
+              }}
               value={productId}
               onValueChange={(v) => pick(v ?? null)}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Elige un producto" />
+                <SelectValue placeholder="Elige un producto o crea uno nuevo" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={NEW_PRODUCT}>
+                  ➕ Nuevo producto (no está en la lista)
+                </SelectItem>
                 {products.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.name} · stock {p.stock}
@@ -443,6 +466,33 @@ function PurchaseDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {isNew && (
+            <div className="grid grid-cols-2 gap-3 rounded-lg border border-dashed p-3">
+              <div className="space-y-2">
+                <Label htmlFor="newName">Nombre del producto nuevo *</Label>
+                <Input
+                  id="newName"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="ej: Semaglutide 5mg"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="newUnit">Presentación (opcional)</Label>
+                <Input
+                  id="newUnit"
+                  value={newUnit}
+                  onChange={(e) => setNewUnit(e.target.value)}
+                  placeholder="ej: vial 5mg"
+                />
+              </div>
+              <p className="col-span-2 text-xs text-muted-foreground">
+                Se creará en {businessId === "peptides" ? "Peptides" : "Supplements"} con
+                el stock comprado. Luego puedes editar precio y categoría en el producto.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">

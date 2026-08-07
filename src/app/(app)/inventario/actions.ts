@@ -224,13 +224,20 @@ export async function adjustProductStock(
 // Compras / recompras de inventario (Supplements / Peptides)
 // Sube el stock, actualiza el costo (promedio ponderado) y registra el egreso.
 // -------------------------------------------------------------------------
-const purchaseSchema = z.object({
-  productId: z.string().uuid("Selecciona un producto."),
-  quantity: z.coerce.number().int().min(1, "La cantidad debe ser al menos 1."),
-  unitCost: z.coerce.number().min(0, "El costo no puede ser negativo."),
-  supplier: z.string().trim().optional(),
-  note: z.string().trim().optional(),
-});
+const purchaseSchema = z
+  .object({
+    productId: z.string().uuid().nullable().optional(),
+    // Si no hay productId, se crea un producto con este nombre.
+    newProductName: z.string().trim().optional(),
+    unit: z.string().trim().optional(), // presentación del producto nuevo
+    quantity: z.coerce.number().int().min(1, "La cantidad debe ser al menos 1."),
+    unitCost: z.coerce.number().min(0, "El costo no puede ser negativo."),
+    supplier: z.string().trim().optional(),
+    note: z.string().trim().optional(),
+  })
+  .refine((d) => !!d.productId || !!d.newProductName, {
+    message: "Elige un producto o escribe el nombre del nuevo.",
+  });
 
 export type PurchaseInput = z.input<typeof purchaseSchema>;
 
@@ -244,23 +251,40 @@ export async function recordPurchase(
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Datos inválidos.");
   const d = parsed.data;
 
-  const product = await db.query.products.findFirst({
-    where: and(eq(products.id, d.productId), eq(products.businessId, b)),
-  });
-  if (!product) return fail("Producto inválido.");
-
   const totalCost = Math.round(d.quantity * d.unitCost * 100) / 100;
-  // Costo promedio ponderado: mezcla el stock previo (a su costo) con lo comprado.
-  const prevStock = product.stock;
-  const prevCost = product.cost != null ? Number(product.cost) : d.unitCost;
-  const newStock = prevStock + d.quantity;
-  const avgCost =
-    newStock > 0
-      ? (prevStock * prevCost + d.quantity * d.unitCost) / newStock
-      : d.unitCost;
 
   try {
     await db.transaction(async (tx) => {
+      // Resolver el producto: usar el existente o crear uno nuevo al vuelo.
+      let product = d.productId
+        ? await tx.query.products.findFirst({
+            where: and(eq(products.id, d.productId), eq(products.businessId, b)),
+          })
+        : undefined;
+
+      if (!product && !d.productId) {
+        const [created] = await tx
+          .insert(products)
+          .values({
+            businessId: b,
+            name: d.newProductName!,
+            unit: d.unit || null,
+            stock: 0,
+          })
+          .returning();
+        product = created;
+      }
+      if (!product) throw new Error("PRODUCTO_INVALIDO");
+
+      // Costo promedio ponderado: mezcla el stock previo con lo comprado.
+      const prevStock = product.stock;
+      const prevCost = product.cost != null ? Number(product.cost) : d.unitCost;
+      const newStock = prevStock + d.quantity;
+      const avgCost =
+        newStock > 0
+          ? (prevStock * prevCost + d.quantity * d.unitCost) / newStock
+          : d.unitCost;
+
       await tx
         .update(products)
         .set({
@@ -300,7 +324,9 @@ export async function recordPurchase(
     });
     refreshWithFinance();
     return ok;
-  } catch {
+  } catch (e) {
+    if (e instanceof Error && e.message === "PRODUCTO_INVALIDO")
+      return fail("Producto inválido.");
     return fail("No se pudo registrar la compra.");
   }
 }
