@@ -108,7 +108,7 @@ export function OrderForm({
   const [shipCompanyCost, setShipCompanyCost] = useState("0");
 
   const isPeptides = businessId === "peptides";
-  const retiroLabel = isPeptides ? "Retiro en oficina" : "Retiro en tienda";
+  const retiroLabel = "Retiro en tienda / oficina";
   const isPickup = deliveryMethod === "retiro";
   // Métodos de envío a domicilio (excluye "retiro", que es su propia opción).
   const deliveryMethods = SHIPPING_METHODS.filter((m) => m.id !== "retiro");
