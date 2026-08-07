@@ -5,6 +5,8 @@ import { getCurrentBusiness } from "@/lib/business";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { UserMenu } from "@/components/user-menu";
 import { BusinessSwitcher } from "@/components/business-switcher";
+import { SignOutButton } from "@/components/sign-out-button";
+import { ROLE_LABELS } from "@/lib/constants";
 
 export default async function AppLayout({
   children,
@@ -42,7 +44,7 @@ export default async function AppLayout({
         </div>
 
         {canOrder && (
-          <div className="p-3">
+          <div className="px-3 pt-3">
             <Link
               href="/pedidos/nuevo"
               className="flex items-center justify-center gap-2 rounded-xl bg-sidebar-primary px-4 py-2.5 text-sm font-medium text-sidebar-primary-foreground transition-opacity hover:opacity-90"
@@ -52,6 +54,17 @@ export default async function AppLayout({
             </Link>
           </div>
         )}
+
+        {/* Sesión */}
+        <div className="mt-2 border-t border-sidebar-foreground/10 p-3">
+          <div className="mb-1 px-3">
+            <p className="truncate text-sm font-medium text-white">{user.name}</p>
+            <p className="truncate text-[11px] text-sidebar-foreground/60">
+              {ROLE_LABELS[user.role]}
+            </p>
+          </div>
+          <SignOutButton />
+        </div>
       </aside>
 
       {/* Contenido */}
