@@ -48,6 +48,64 @@ function weekStart(d: Date, offsetWeeks = 0): Date {
   );
 }
 
+// Convierte "YYYY-MM-DD" a la medianoche de Panamá de ese día (00:00 UTC-5).
+// Devuelve null si el string no es una fecha válida.
+function parseDayStart(s?: string): Date | null {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo, d, 5));
+  // Rechaza fechas imposibles (p. ej. 2026-02-31 desbordaría).
+  if (
+    dt.getUTCFullYear() !== y ||
+    dt.getUTCMonth() !== mo ||
+    dt.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return dt;
+}
+
+function dayLabel(d: Date): string {
+  return new Intl.DateTimeFormat("es-PA", {
+    day: "numeric",
+    month: "short",
+    timeZone: "America/Panama",
+  })
+    .format(d)
+    .replace(".", "");
+}
+
+// Rango personalizado "de una fecha a una fecha" (ambas inclusivas). Devuelve
+// null si las fechas no son válidas, para caer al periodo por defecto.
+export function resolveCustomRange(from?: string, to?: string): ResolvedPeriod | null {
+  let start = parseDayStart(from);
+  let endDay = parseDayStart(to);
+  if (!start && !endDay) return null;
+  // Si falta una, usa la otra para ambos extremos (un solo día).
+  if (!start) start = endDay;
+  if (!endDay) endDay = start;
+  if (!start || !endDay) return null;
+  // Si vienen invertidas, las intercambia.
+  if (endDay < start) {
+    const t = start;
+    start = endDay;
+    endDay = t;
+  }
+  // El fin es exclusivo: 00:00 del día siguiente al `to`.
+  const end = new Date(endDay.getTime() + 24 * 3600 * 1000);
+  const len = end.getTime() - start.getTime();
+  return {
+    value: "custom",
+    label: `${dayLabel(start)} – ${dayLabel(endDay)}`,
+    range: { start, end },
+    prev: { start: new Date(start.getTime() - len), end: start },
+  };
+}
+
 export function resolvePeriod(value?: string): ResolvedPeriod {
   const v = isFinancePeriod(value) ? (value as string) : "mes";
   const now = panNow();

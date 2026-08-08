@@ -4,7 +4,7 @@ import { requirePermission, can } from "@/lib/session";
 import { getCurrentBusiness } from "@/lib/business";
 import { getBusiness } from "@/lib/constants";
 import { formatMoney } from "@/lib/format";
-import { resolvePeriod, FINANCE_PERIODS } from "@/lib/period";
+import { resolvePeriod, resolveCustomRange, FINANCE_PERIODS } from "@/lib/period";
 import {
   getCashFlow,
   getTransactions,
@@ -24,6 +24,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { CashflowTab } from "./_components/cashflow-tab";
 import { DebtsTab } from "./_components/debts-tab";
 import { SuggestionsTab } from "./_components/suggestions-tab";
@@ -45,13 +47,14 @@ const EXPENSE_PALETTE = [
 export default async function FinanzasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
 }) {
   const user = await requirePermission("finance.view");
   const canManage = can(user, "finance.manage");
   const scope = await getCurrentBusiness();
-  const { period: periodParam } = await searchParams;
-  const period = resolvePeriod(periodParam);
+  const { period: periodParam, from, to } = await searchParams;
+  // Un rango "de fecha a fecha" tiene prioridad sobre los periodos rápidos.
+  const period = resolveCustomRange(from, to) ?? resolvePeriod(periodParam);
 
   const [
     dash,
@@ -194,7 +197,7 @@ export default async function FinanzasPage({
             <span className="font-medium text-foreground">{period.label}</span>
           </p>
         </div>
-        <PeriodFilter active={period.value} />
+        <PeriodFilter active={period.value} from={from} to={to} />
       </div>
 
       {/* KPIs principales */}
@@ -277,25 +280,77 @@ export default async function FinanzasPage({
   );
 }
 
-function PeriodFilter({ active }: { active: string }) {
+function PeriodFilter({
+  active,
+  from,
+  to,
+}: {
+  active: string;
+  from?: string;
+  to?: string;
+}) {
+  const isCustom = active === "custom";
   return (
-    <div className="flex flex-wrap gap-1 rounded-lg border bg-card p-1">
-      {FINANCE_PERIODS.map((p) => {
-        const on = p.value === active;
-        return (
-          <Link
-            key={p.value}
-            href={`/finanzas?period=${p.value}`}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              on
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            }`}
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex flex-wrap gap-1 rounded-lg border bg-card p-1">
+        {FINANCE_PERIODS.map((p) => {
+          const on = p.value === active;
+          return (
+            <Link
+              key={p.value}
+              href={`/finanzas?period=${p.value}`}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                on
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {p.label}
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Rango personalizado: de una fecha a una fecha (form GET, sin JS) */}
+      <form
+        method="get"
+        action="/finanzas"
+        className={`flex flex-wrap items-center gap-1.5 rounded-lg border p-1 ${
+          isCustom ? "border-primary bg-primary/5" : "bg-card"
+        }`}
+      >
+        <span className="pl-1.5 text-xs font-medium text-muted-foreground">Del</span>
+        <Input
+          type="date"
+          name="from"
+          defaultValue={from ?? ""}
+          className="h-8 w-[9.5rem] px-2 text-sm"
+          aria-label="Fecha inicial"
+        />
+        <span className="text-xs font-medium text-muted-foreground">al</span>
+        <Input
+          type="date"
+          name="to"
+          defaultValue={to ?? ""}
+          className="h-8 w-[9.5rem] px-2 text-sm"
+          aria-label="Fecha final"
+        />
+        <Button type="submit" size="sm" className="h-8">
+          Aplicar
+        </Button>
+        {isCustom && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-8"
+            nativeButton={false}
+            render={<Link href="/finanzas?period=mes" />}
           >
-            {p.label}
-          </Link>
-        );
-      })}
+            Limpiar
+          </Button>
+        )}
+      </form>
     </div>
   );
 }
