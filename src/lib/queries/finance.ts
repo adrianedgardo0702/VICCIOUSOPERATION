@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, lt, sql, type Column } from "drizzle-orm";
 import { db } from "@/db";
-import { orders, financeTransactions, debts } from "@/db/schema";
+import { orders, orderItems, financeTransactions, debts } from "@/db/schema";
 import type { BusinessScope } from "@/lib/business";
 import type { DateRange } from "@/lib/period";
 
@@ -147,6 +147,59 @@ export async function getWeeklyTrend(
       Number(o.referral) + Number(o.shipping) + Number(txRows[i]?.expense ?? 0);
     return { label: o.wk, income, expense, profit: income - expense };
   });
+}
+
+// -------------------------------------------------------------------------
+// Top de productos vendidos por negocio (por cantidad), en el periodo.
+// -------------------------------------------------------------------------
+export type TopProduct = { name: string; qty: number; revenue: number };
+export type TopByBusiness = {
+  businessId: string;
+  totalQty: number;
+  items: TopProduct[];
+};
+
+// Cuenta unidades vendidas (líneas de pedidos entregados) agrupadas por
+// descripción del ítem, y devuelve el top `perBusiness` de cada negocio.
+export async function getTopProductsSold(
+  scope: BusinessScope,
+  range?: DateRange | null,
+  perBusiness = 5
+): Promise<TopByBusiness[]> {
+  const rows = await db
+    .select({
+      businessId: orders.businessId,
+      name: orderItems.description,
+      qty: sql<number>`sum(${orderItems.quantity})::int`,
+      revenue: sql<string>`coalesce(sum(${orderItems.lineTotal}), 0)::text`,
+    })
+    .from(orderItems)
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .where(
+      and(
+        eq(orders.status, "entregado"),
+        ordersBiz(scope),
+        whereRange(orders.createdAt, range)
+      )
+    )
+    .groupBy(orders.businessId, orderItems.description)
+    .orderBy(orders.businessId, desc(sql`sum(${orderItems.quantity})`));
+
+  const byBiz = new Map<string, TopByBusiness>();
+  for (const r of rows) {
+    let g = byBiz.get(r.businessId);
+    if (!g) {
+      g = { businessId: r.businessId, totalQty: 0, items: [] };
+      byBiz.set(r.businessId, g);
+    }
+    const qty = Number(r.qty);
+    g.totalQty += qty;
+    if (g.items.length < perBusiness) {
+      g.items.push({ name: r.name, qty, revenue: Number(r.revenue) });
+    }
+  }
+
+  return [...byBiz.values()].sort((a, b) => b.totalQty - a.totalQty);
 }
 
 // -------------------------------------------------------------------------

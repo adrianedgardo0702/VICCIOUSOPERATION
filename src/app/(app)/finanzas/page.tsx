@@ -13,6 +13,7 @@ import {
   getPerBusinessPL,
   getTxByCategory,
   getWeeklyTrend,
+  getTopProductsSold,
 } from "@/lib/queries/finance";
 import { getFinanceDashboard, deltaPct } from "@/lib/queries/dashboard";
 import { computePayoff, generateSuggestions } from "@/lib/finance";
@@ -31,6 +32,7 @@ import { DebtsTab } from "./_components/debts-tab";
 import { SuggestionsTab } from "./_components/suggestions-tab";
 import { BreakdownTab, type BreakdownItem } from "./_components/breakdown-tab";
 import { CategoriesTab } from "./_components/categories-tab";
+import { TopProductsTab } from "./_components/top-products-tab";
 
 const INCOME_PALETTE = ["#0891b2", "#0d9488", "#65a30d", "#2563eb", "#4f46e5"];
 const EXPENSE_PALETTE = [
@@ -64,6 +66,7 @@ export default async function FinanzasPage({
     txCats,
     transactions,
     weekly,
+    topProducts,
     debtRows,
     lowStockCount,
   ] = await Promise.all([
@@ -74,6 +77,7 @@ export default async function FinanzasPage({
     getTxByCategory(scope, period.range),
     getTransactions(scope, period.range),
     getWeeklyTrend(scope, 8),
+    getTopProductsSold(scope, period.range, 5),
     getDebts(),
     getLowStockCount(),
   ]);
@@ -225,6 +229,7 @@ export default async function FinanzasPage({
       <Tabs defaultValue="breakdown">
         <TabsList>
           <TabsTrigger value="breakdown">Desglose</TabsTrigger>
+          <TabsTrigger value="top">Top productos</TabsTrigger>
           <TabsTrigger value="categories">Categorías</TabsTrigger>
           <TabsTrigger value="cashflow">Movimientos</TabsTrigger>
           <TabsTrigger value="debts">Deudas</TabsTrigger>
@@ -244,6 +249,10 @@ export default async function FinanzasPage({
             weekly={weekly}
             businessSeg={businessSeg}
           />
+        </TabsContent>
+
+        <TabsContent value="top" className="mt-4">
+          <TopProductsTab groups={topProducts} />
         </TabsContent>
 
         <TabsContent value="categories" className="mt-4">
