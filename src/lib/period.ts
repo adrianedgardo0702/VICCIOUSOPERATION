@@ -11,6 +11,8 @@ export type ResolvedPeriod = {
 };
 
 export const FINANCE_PERIODS = [
+  { value: "semana", label: "Esta semana" },
+  { value: "semana-pasada", label: "Semana pasada" },
   { value: "mes", label: "Este mes" },
   { value: "mes-pasado", label: "Mes pasado" },
   { value: "3m", label: "Últimos 3 meses" },
@@ -31,6 +33,21 @@ function monthStart(y: number, m: number): Date {
   return new Date(Date.UTC(y, m, 1, 5));
 }
 
+// Lunes 00:00 de Panamá de la semana que contiene `d`. La semana empieza lunes.
+// `offsetWeeks` desplaza n semanas (negativo = hacia atrás).
+function weekStart(d: Date, offsetWeeks = 0): Date {
+  const day = d.getUTCDay(); // 0=domingo … 6=sábado (campos UTC = reloj de Panamá)
+  const backToMonday = (day + 6) % 7;
+  return new Date(
+    Date.UTC(
+      d.getUTCFullYear(),
+      d.getUTCMonth(),
+      d.getUTCDate() - backToMonday + offsetWeeks * 7,
+      5
+    )
+  );
+}
+
 export function resolvePeriod(value?: string): ResolvedPeriod {
   const v = isFinancePeriod(value) ? (value as string) : "mes";
   const now = panNow();
@@ -40,6 +57,20 @@ export function resolvePeriod(value?: string): ResolvedPeriod {
   const label = FINANCE_PERIODS.find((p) => p.value === v)?.label ?? "Este mes";
 
   switch (v) {
+    case "semana":
+      return {
+        value: v,
+        label,
+        range: { start: weekStart(now, 0), end: weekStart(now, 1) },
+        prev: { start: weekStart(now, -1), end: weekStart(now, 0) },
+      };
+    case "semana-pasada":
+      return {
+        value: v,
+        label,
+        range: { start: weekStart(now, -1), end: weekStart(now, 0) },
+        prev: { start: weekStart(now, -2), end: weekStart(now, -1) },
+      };
     case "mes":
       return {
         value: v,

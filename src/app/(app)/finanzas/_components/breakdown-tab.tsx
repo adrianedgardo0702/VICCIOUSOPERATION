@@ -10,7 +10,7 @@ import { BarsChart, type BarsPoint } from "@/components/charts/bars-chart";
 import { DonutChart, DonutLegend, type DonutSegment } from "@/components/charts/donut-chart";
 import { getBusiness } from "@/lib/constants";
 import { formatMoney } from "@/lib/format";
-import type { PLBreakdown } from "@/lib/queries/finance";
+import type { PLBreakdown, WeeklyPoint } from "@/lib/queries/finance";
 
 export type BreakdownItem = { label: string; value: number; color: string };
 
@@ -21,6 +21,7 @@ export function BreakdownTab({
   totalIncome,
   totalExpense,
   trend,
+  weekly,
   businessSeg,
 }: {
   pl: PLBreakdown;
@@ -29,6 +30,7 @@ export function BreakdownTab({
   totalIncome: number;
   totalExpense: number;
   trend: BarsPoint[];
+  weekly: WeeklyPoint[];
   businessSeg: DonutSegment[];
 }) {
   const incomeSeg = incomeItems.filter((i) => i.value > 0);
@@ -86,6 +88,9 @@ export function BreakdownTab({
         </div>
         <BarsChart data={trend} />
       </section>
+
+      {/* Ganancia semanal */}
+      <WeeklyProfit weekly={weekly} />
 
       {/* Estado de resultados por negocio */}
       <section className="card-soft p-5">
@@ -314,6 +319,75 @@ function DonutCard({
             <DonutLegend segments={segments} />
           </div>
         </div>
+      )}
+    </section>
+  );
+}
+
+function WeeklyProfit({ weekly }: { weekly: WeeklyPoint[] }) {
+  const hasData = weekly.some((w) => w.income > 0 || w.expense > 0);
+  const totalProfit = weekly.reduce((s, w) => s + w.profit, 0);
+  const best = weekly.reduce<WeeklyPoint | null>(
+    (m, w) => (m === null || w.profit > m.profit ? w : m),
+    null
+  );
+
+  return (
+    <section className="card-soft p-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-base font-semibold">Ganancia semanal</h3>
+          <p className="text-xs text-muted-foreground">
+            Últimas {weekly.length} semanas (lunes a domingo, hora de Panamá)
+          </p>
+        </div>
+        <div className="flex gap-4 text-xs">
+          <Legend color="#059669" label="Ingresos" />
+          <Legend color="#e11d48" label="Egresos" />
+        </div>
+      </div>
+
+      <BarsChart data={weekly} />
+
+      {hasData ? (
+        <>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {weekly.map((w) => (
+              <div
+                key={w.label}
+                className="flex items-center justify-between rounded-lg border bg-card px-3 py-2"
+              >
+                <span className="text-xs text-muted-foreground">Sem. {w.label}</span>
+                <span
+                  className="text-sm font-semibold tabular-nums"
+                  style={{ color: w.profit >= 0 ? "#059669" : "#e11d48" }}
+                >
+                  {formatMoney(w.profit)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Ganancia del periodo mostrado:{" "}
+            <span
+              className="font-semibold"
+              style={{ color: totalProfit >= 0 ? "#059669" : "#e11d48" }}
+            >
+              {formatMoney(totalProfit)}
+            </span>
+            {best && best.profit > 0 && (
+              <>
+                {" · "}mejor semana{" "}
+                <span className="font-medium text-foreground">Sem. {best.label}</span> con{" "}
+                <span className="font-medium text-foreground">{formatMoney(best.profit)}</span>
+              </>
+            )}
+          </p>
+        </>
+      ) : (
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          Sin movimientos en las últimas semanas.
+        </p>
       )}
     </section>
   );

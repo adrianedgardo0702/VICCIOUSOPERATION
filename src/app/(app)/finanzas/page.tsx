@@ -12,6 +12,7 @@ import {
   getLowStockCount,
   getPerBusinessPL,
   getTxByCategory,
+  getWeeklyTrend,
 } from "@/lib/queries/finance";
 import { getFinanceDashboard, deltaPct } from "@/lib/queries/dashboard";
 import { computePayoff, generateSuggestions } from "@/lib/finance";
@@ -52,17 +53,27 @@ export default async function FinanzasPage({
   const { period: periodParam } = await searchParams;
   const period = resolvePeriod(periodParam);
 
-  const [dash, cashFlow, prevCash, pl, txCats, transactions, debtRows, lowStockCount] =
-    await Promise.all([
-      getFinanceDashboard(scope),
-      getCashFlow(scope, period.range),
-      period.prev ? getCashFlow(scope, period.prev) : Promise.resolve(null),
-      getPerBusinessPL(scope, period.range),
-      getTxByCategory(scope, period.range),
-      getTransactions(scope, period.range),
-      getDebts(),
-      getLowStockCount(),
-    ]);
+  const [
+    dash,
+    cashFlow,
+    prevCash,
+    pl,
+    txCats,
+    transactions,
+    weekly,
+    debtRows,
+    lowStockCount,
+  ] = await Promise.all([
+    getFinanceDashboard(scope),
+    getCashFlow(scope, period.range),
+    period.prev ? getCashFlow(scope, period.prev) : Promise.resolve(null),
+    getPerBusinessPL(scope, period.range),
+    getTxByCategory(scope, period.range),
+    getTransactions(scope, period.range),
+    getWeeklyTrend(scope, 8),
+    getDebts(),
+    getLowStockCount(),
+  ]);
 
   const trend = dash.salesTrend.map((p, i) => ({
     label: p.label,
@@ -227,6 +238,7 @@ export default async function FinanzasPage({
             totalIncome={cashFlow.totalIncome}
             totalExpense={cashFlow.totalExpense}
             trend={trend}
+            weekly={weekly}
             businessSeg={businessSeg}
           />
         </TabsContent>

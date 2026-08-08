@@ -87,6 +87,69 @@ export async function getCashFlow(
 }
 
 // -------------------------------------------------------------------------
+// Tendencia semanal (últimas N semanas, lunes a domingo en hora de Panamá)
+// -------------------------------------------------------------------------
+export type WeeklyPoint = {
+  label: string; // inicio de la semana, "DD/MM"
+  income: number; // ventas entregadas + ingresos manuales
+  expense: number; // comisiones + envíos + gastos manuales
+  profit: number; // income − expense
+};
+
+type WeekOrderRow = { wk: string; sales: number; referral: number; shipping: number };
+type WeekTxRow = { wk: string; income: number; expense: number };
+
+// Ingresos, egresos y ganancia por semana. Mismos criterios que getCashFlow:
+// ingresos = ventas entregadas + movimientos manuales de ingreso; egresos =
+// comisiones de referido + envíos asumidos + movimientos manuales de gasto.
+export async function getWeeklyTrend(
+  scope: BusinessScope,
+  weeks = 8
+): Promise<WeeklyPoint[]> {
+  const back = Math.max(0, weeks - 1);
+
+  const orderRows = (await db.execute(sql`
+    select to_char(w, 'DD/MM') as wk,
+           coalesce(sum(o.total) filter (where o.status = 'entregado'), 0)::float8 as sales,
+           coalesce(sum(o.referral_commission) filter (where o.status = 'entregado'), 0)::float8 as referral,
+           coalesce(sum(o.shipping_company_cost) filter (where o.status = 'entregado'), 0)::float8 as shipping
+    from generate_series(
+      date_trunc('week', (now() at time zone 'America/Panama')) - (interval '1 week' * ${back}),
+      date_trunc('week', (now() at time zone 'America/Panama')),
+      interval '1 week'
+    ) w
+    left join orders o
+      on date_trunc('week', o.created_at at time zone 'America/Panama') = w
+      ${scope === "all" ? sql`` : sql`and o.business_id = ${scope}`}
+    group by w
+    order by w
+  `)) as unknown as WeekOrderRow[];
+
+  const txRows = (await db.execute(sql`
+    select to_char(w, 'DD/MM') as wk,
+           coalesce(sum(t.amount) filter (where t.type = 'income'), 0)::float8 as income,
+           coalesce(sum(t.amount) filter (where t.type = 'expense'), 0)::float8 as expense
+    from generate_series(
+      date_trunc('week', (now() at time zone 'America/Panama')) - (interval '1 week' * ${back}),
+      date_trunc('week', (now() at time zone 'America/Panama')),
+      interval '1 week'
+    ) w
+    left join finance_transactions t
+      on date_trunc('week', t.date at time zone 'America/Panama') = w
+      ${scope === "all" ? sql`` : sql`and t.business_id = ${scope}`}
+    group by w
+    order by w
+  `)) as unknown as WeekTxRow[];
+
+  return orderRows.map((o, i) => {
+    const income = Number(o.sales) + Number(txRows[i]?.income ?? 0);
+    const expense =
+      Number(o.referral) + Number(o.shipping) + Number(txRows[i]?.expense ?? 0);
+    return { label: o.wk, income, expense, profit: income - expense };
+  });
+}
+
+// -------------------------------------------------------------------------
 // Desglose: estado de resultados por negocio
 // -------------------------------------------------------------------------
 export type BusinessPL = {
