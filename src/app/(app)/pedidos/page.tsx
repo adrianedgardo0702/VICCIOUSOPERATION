@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { OrderStatusBadge } from "@/components/order-status-badge";
+import { Badge } from "@/components/ui/badge";
 import { OrdersFilter } from "./_components/orders-filter";
 
 export default async function PedidosPage({
@@ -120,7 +121,15 @@ export default async function PedidosPage({
                 )}
                 <TableCell>
                   <Link href={`/pedidos/${o.id}`} className="block font-medium">
-                    {o.customerName}
+                    <span className="flex items-center gap-2">
+                      {o.customerName}
+                      {o.isCredit &&
+                        Number(o.total) - Number(o.amountPaid) > 0 && (
+                          <Badge className="bg-amber-500 text-white">
+                            Por cobrar
+                          </Badge>
+                        )}
+                    </span>
                   </Link>
                 </TableCell>
                 <TableCell>

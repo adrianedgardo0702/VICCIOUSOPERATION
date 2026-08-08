@@ -22,8 +22,10 @@ import {
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { OrderStatusBadge } from "@/components/order-status-badge";
+import { Badge } from "@/components/ui/badge";
 import { OrderStatusControl } from "./order-status";
 import { OrderShipping } from "./order-shipping";
+import { OrderCredit } from "./order-credit";
 
 export default async function OrderDetailPage({
   params,
@@ -35,8 +37,9 @@ export default async function OrderDetailPage({
   const detail = await getOrderWithItems(id, user);
   if (!detail) notFound();
 
-  const { order, items } = detail;
+  const { order, items, payments } = detail;
   const canManage = can(user, "orders.manage");
+  const canCollect = canManage || can(user, "finance.manage");
   const biz = getBusiness(order.businessId);
 
   return (
@@ -55,6 +58,12 @@ export default async function OrderDetailPage({
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">Pedido #{order.number}</h1>
             <OrderStatusBadge status={order.status} />
+            {order.isCredit &&
+              (Number(order.total) - Number(order.amountPaid) > 0 ? (
+                <Badge className="bg-amber-500 text-white">Por cobrar</Badge>
+              ) : (
+                <Badge className="bg-emerald-600 text-white">Cobrado</Badge>
+              ))}
           </div>
           <p className="text-muted-foreground">
             {biz?.name} · {new Date(order.createdAt).toLocaleString("es-PA")}
@@ -159,6 +168,21 @@ export default async function OrderDetailPage({
           </div>
         </CardContent>
       </Card>
+
+      <OrderCredit
+        orderId={order.id}
+        isCredit={order.isCredit}
+        total={Number(order.total)}
+        amountPaid={Number(order.amountPaid)}
+        payments={payments.map((p) => ({
+          id: p.id,
+          amount: p.amount,
+          note: p.note,
+          paidAt: p.paidAt,
+          byName: p.byName,
+        }))}
+        canManage={canCollect}
+      />
 
       {order.notes && (
         <Card>

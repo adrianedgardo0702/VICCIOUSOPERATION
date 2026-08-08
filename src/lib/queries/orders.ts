@@ -3,6 +3,7 @@ import { db } from "@/db";
 import {
   orders,
   orderItems,
+  orderPayments,
   users,
   products,
   nakamaDesigns,
@@ -34,6 +35,8 @@ export type OrderListRow = {
   customerName: string;
   status: string;
   total: string;
+  isCredit: boolean;
+  amountPaid: string;
   sellerName: string | null;
   itemCount: number;
   createdAt: Date;
@@ -70,6 +73,8 @@ export async function getOrders(opts: {
       customerName: orders.customerName,
       status: orders.status,
       total: orders.total,
+      isCredit: orders.isCredit,
+      amountPaid: orders.amountPaid,
       sellerName: users.name,
       itemCount: sql<number>`(select count(*)::int from ${orderItems} where ${orderItems.orderId} = ${orders.id})`,
       createdAt: orders.createdAt,
@@ -86,6 +91,7 @@ export type OrderDetail = {
     referrerName: string | null;
   };
   items: (typeof orderItems.$inferSelect)[];
+  payments: (typeof orderPayments.$inferSelect & { byName: string | null })[];
 };
 
 export async function getOrderWithItems(
@@ -113,6 +119,23 @@ export async function getOrderWithItems(
     .from(orderItems)
     .where(eq(orderItems.orderId, id));
 
+  // Abonos del pedido (solo relevantes en pedidos a crédito).
+  const payments = await db
+    .select({
+      id: orderPayments.id,
+      orderId: orderPayments.orderId,
+      amount: orderPayments.amount,
+      note: orderPayments.note,
+      paidAt: orderPayments.paidAt,
+      createdBy: orderPayments.createdBy,
+      createdAt: orderPayments.createdAt,
+      byName: users.name,
+    })
+    .from(orderPayments)
+    .leftJoin(users, eq(orderPayments.createdBy, users.id))
+    .where(eq(orderPayments.orderId, id))
+    .orderBy(desc(orderPayments.paidAt));
+
   return {
     order: {
       ...row.order,
@@ -120,6 +143,7 @@ export async function getOrderWithItems(
       referrerName: row.referrerName,
     },
     items,
+    payments,
   };
 }
 

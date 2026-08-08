@@ -14,6 +14,7 @@ import {
   getTxByCategory,
   getWeeklyTrend,
   getTopProductsSold,
+  getReceivables,
 } from "@/lib/queries/finance";
 import { getFinanceDashboard, deltaPct } from "@/lib/queries/dashboard";
 import { computePayoff, generateSuggestions } from "@/lib/finance";
@@ -33,6 +34,7 @@ import { SuggestionsTab } from "./_components/suggestions-tab";
 import { BreakdownTab, type BreakdownItem } from "./_components/breakdown-tab";
 import { CategoriesTab } from "./_components/categories-tab";
 import { TopProductsTab } from "./_components/top-products-tab";
+import { ReceivablesTab } from "./_components/receivables-tab";
 
 const INCOME_PALETTE = ["#0891b2", "#0d9488", "#65a30d", "#2563eb", "#4f46e5"];
 const EXPENSE_PALETTE = [
@@ -67,6 +69,7 @@ export default async function FinanzasPage({
     transactions,
     weekly,
     topProducts,
+    receivables,
     debtRows,
     lowStockCount,
   ] = await Promise.all([
@@ -78,6 +81,7 @@ export default async function FinanzasPage({
     getTransactions(scope, period.range),
     getWeeklyTrend(scope, 8),
     getTopProductsSold(scope, period.range, 5),
+    getReceivables(scope),
     getDebts(),
     getLowStockCount(),
   ]);
@@ -215,12 +219,18 @@ export default async function FinanzasPage({
           hint={netMargin === null ? "Ingresos − egresos" : `Margen neto ${netMargin.toFixed(0)}%`}
           delta={profitGrowth}
         />
-        <SummaryCard label="Por cobrar" value={formatMoney(cashFlow.pendingSales)} hint="Pedidos aún no entregados" />
+        <SummaryCard label="Por entregar" value={formatMoney(cashFlow.pendingSales)} hint="Pedidos aún no entregados" />
       </div>
 
       {/* KPIs secundarios */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard label="Ventas (entregadas)" value={formatMoney(cashFlow.salesIncome)} hint={`${cashFlow.ordersCount} ${cashFlow.ordersCount === 1 ? "pedido" : "pedidos"}`} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <SummaryCard
+          label="Cuentas por cobrar"
+          value={formatMoney(cashFlow.receivables)}
+          color={cashFlow.receivables > 0 ? "#d97706" : undefined}
+          hint="Crédito entregado, sin cobrar"
+        />
+        <SummaryCard label="Ventas (entregadas)" value={formatMoney(cashFlow.salesIncome)} hint={`${cashFlow.ordersCount} ${cashFlow.ordersCount === 1 ? "pedido" : "pedidos"} · incluye cobros`} />
         <SummaryCard label="Ticket promedio" value={formatMoney(avgTicket)} hint="Venta ÷ pedidos entregados" />
         <SummaryCard label="Ratio de gastos" value={expenseRatio === null ? "—" : `${expenseRatio.toFixed(0)}%`} hint="Egresos ÷ ingresos" />
         <SummaryCard label="Ingresos manuales" value={formatMoney(cashFlow.manualIncome)} hint="Movimientos de caja (no ventas)" />
@@ -230,6 +240,9 @@ export default async function FinanzasPage({
         <TabsList>
           <TabsTrigger value="breakdown">Desglose</TabsTrigger>
           <TabsTrigger value="top">Top productos</TabsTrigger>
+          <TabsTrigger value="receivables">
+            Por cobrar{receivables.length ? ` (${receivables.length})` : ""}
+          </TabsTrigger>
           <TabsTrigger value="categories">Categorías</TabsTrigger>
           <TabsTrigger value="cashflow">Movimientos</TabsTrigger>
           <TabsTrigger value="debts">Deudas</TabsTrigger>
@@ -253,6 +266,10 @@ export default async function FinanzasPage({
 
         <TabsContent value="top" className="mt-4">
           <TopProductsTab groups={topProducts} />
+        </TabsContent>
+
+        <TabsContent value="receivables" className="mt-4">
+          <ReceivablesTab rows={receivables} showBusiness={scope === "all"} />
         </TabsContent>
 
         <TabsContent value="categories" className="mt-4">

@@ -250,6 +250,15 @@ export const orders = pgTable(
       .notNull()
       .default("0"),
     total: numeric("total", { precision: 12, scale: 2 }).notNull().default("0"),
+    // Pedido a crédito ("por cobrar"): se entrega pero se cobra después
+    // (clínicas, spas, clientes de confianza). En finanzas NO suma a caja
+    // hasta que se registran los cobros (ver order_payments / amountPaid).
+    isCredit: boolean("is_credit").notNull().default(false),
+    // Monto ya cobrado (suma de los abonos). Para pedidos normales queda en 0
+    // porque se asumen cobrados al entregar.
+    amountPaid: numeric("amount_paid", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
     // true una vez que el pedido descontó inventario (evita doble descuento).
     stockApplied: boolean("stock_applied").notNull().default(false),
     notes: text("notes"),
@@ -291,6 +300,30 @@ export const orderItems = pgTable(
   (t) => [index("idx_order_items_order").on(t.orderId)]
 );
 
+// Abonos / cobros de pedidos a crédito ("cuentas por cobrar"). Cada fila es un
+// pago parcial o total; la suma actualiza orders.amountPaid. En finanzas el
+// ingreso de un pedido a crédito se reconoce por la fecha del abono (paidAt).
+export const orderPayments = pgTable(
+  "order_payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    note: text("note"),
+    paidAt: timestamp("paid_at", { withTimezone: true }).defaultNow().notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_order_payments_order").on(t.orderId),
+    index("idx_order_payments_paid").on(t.paidAt),
+  ]
+);
+
 // Liquidaciones de comisión a vendedores (pagos por periodo).
 // Reflejan el pago real al vendedor; el flujo de caja lo registra aparte.
 export const commissionPayments = pgTable(
@@ -322,6 +355,7 @@ export const commissionSettings = pgTable("commission_settings", {
 
 export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
+export type OrderPayment = typeof orderPayments.$inferSelect;
 export type Referrer = typeof referrers.$inferSelect;
 export type CommissionPayment = typeof commissionPayments.$inferSelect;
 export type CommissionSettings = typeof commissionSettings.$inferSelect;

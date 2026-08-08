@@ -99,6 +99,8 @@ export function OrderForm({
       setCustAddress(c.address ?? "");
     }
   }
+  // Pedido a crédito ("por cobrar"): se entrega y se cobra después.
+  const [isCredit, setIsCredit] = useState(false);
   const [deliveryMethod, setDeliveryMethod] = useState<"envio" | "retiro">("envio");
   const [destination, setDestination] = useState("");
   const [shipMethodId, setShipMethodId] = useState<string>(
@@ -246,6 +248,7 @@ export function OrderForm({
       destination,
       shippingCharge: shipCost,
       shippingCompanyCost: isPickup ? 0 : Math.max(Number(shipCompanyCost) || 0, 0),
+      isCredit,
       notes: String(fd.get("notes") ?? ""),
       items: lines.map((l) =>
         isProduction
@@ -734,6 +737,26 @@ export function OrderForm({
               ? `${retiroLabel} — sin costo de envío.`
               : "Puedes ajustar el envío luego en el detalle del pedido."}
           </p>
+
+          <Separator />
+          {/* Cuenta por cobrar (crédito) */}
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 has-checked:border-amber-500 has-checked:bg-amber-500/5">
+            <input
+              type="checkbox"
+              checked={isCredit}
+              onChange={(e) => setIsCredit(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-amber-600"
+            />
+            <span className="space-y-0.5">
+              <span className="block text-sm font-medium">
+                Pedido a crédito (por cobrar)
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Para clínicas, spas o clientes de confianza: se entrega y se cobra
+                después. No suma a la caja hasta que registres el cobro.
+              </span>
+            </span>
+          </label>
         </CardContent>
       </Card>
 

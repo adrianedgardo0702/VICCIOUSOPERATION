@@ -1,6 +1,12 @@
 import { and, desc, eq, gte, lt, sql, type Column } from "drizzle-orm";
 import { db } from "@/db";
-import { orders, orderItems, financeTransactions, debts } from "@/db/schema";
+import {
+  orders,
+  orderItems,
+  orderPayments,
+  financeTransactions,
+  debts,
+} from "@/db/schema";
 import type { BusinessScope } from "@/lib/business";
 import type { DateRange } from "@/lib/period";
 
@@ -26,7 +32,7 @@ function whereRange(col: Column, range?: DateRange | null) {
 }
 
 export type CashFlow = {
-  salesIncome: number;
+  salesIncome: number; // ventas cobradas: contado entregado + abonos de crédito
   manualIncome: number;
   referralExpense: number;
   shippingExpense: number;
@@ -34,7 +40,9 @@ export type CashFlow = {
   totalIncome: number;
   totalExpense: number;
   balance: number;
-  pendingSales: number; // ventas de pedidos no entregados (esperado) — snapshot actual
+  pendingSales: number; // pedidos no entregados (por entregar) — snapshot actual
+  receivables: number; // crédito entregado y aún no cobrado — snapshot actual
+  creditCollected: number; // abonos de crédito cobrados en el periodo
   ordersCount: number; // pedidos entregados en el periodo (para ticket promedio)
 };
 
@@ -46,13 +54,25 @@ export async function getCashFlow(
 ): Promise<CashFlow> {
   const [ordersAgg] = await db
     .select({
-      sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
+      // Ventas de contado (no crédito) entregadas: se cobran al entregar.
+      sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} = 'entregado' and ${orders.isCredit} = false${inRange(orders.createdAt, range)}), 0)::text`,
       referral: sql<string>`coalesce(sum(${orders.referralCommission}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
       shipping: sql<string>`coalesce(sum(${orders.shippingCompanyCost}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
       pending: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} not in ('entregado','cancelado')), 0)::text`,
+      // Cuentas por cobrar: crédito entregado y aún no cobrado (snapshot).
+      receivables: sql<string>`coalesce(sum(${orders.total} - ${orders.amountPaid}) filter (where ${orders.isCredit} = true and ${orders.status} = 'entregado'), 0)::text`,
       ordersCount: sql<number>`(count(*) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}))::int`,
     })
     .from(orders)
+    .where(ordersBiz(scope));
+
+  // Abonos de pedidos a crédito cobrados en el periodo (por fecha de cobro).
+  const [payAgg] = await db
+    .select({
+      collected: sql<string>`coalesce(sum(${orderPayments.amount}) filter (where true${inRange(orderPayments.paidAt, range)}), 0)::text`,
+    })
+    .from(orderPayments)
+    .innerJoin(orders, eq(orders.id, orderPayments.orderId))
     .where(ordersBiz(scope));
 
   const [txAgg] = await db
@@ -63,7 +83,8 @@ export async function getCashFlow(
     .from(financeTransactions)
     .where(txBiz(scope));
 
-  const salesIncome = Number(ordersAgg?.sales ?? 0);
+  const creditCollected = Number(payAgg?.collected ?? 0);
+  const salesIncome = Number(ordersAgg?.sales ?? 0) + creditCollected;
   const manualIncome = Number(txAgg?.income ?? 0);
   const referralExpense = Number(ordersAgg?.referral ?? 0);
   const shippingExpense = Number(ordersAgg?.shipping ?? 0);
@@ -82,8 +103,64 @@ export async function getCashFlow(
     totalExpense,
     balance: totalIncome - totalExpense,
     pendingSales: Number(ordersAgg?.pending ?? 0),
+    receivables: Number(ordersAgg?.receivables ?? 0),
+    creditCollected,
     ordersCount: Number(ordersAgg?.ordersCount ?? 0),
   };
+}
+
+// -------------------------------------------------------------------------
+// Cuentas por cobrar: pedidos a crédito entregados con saldo pendiente.
+// -------------------------------------------------------------------------
+export type ReceivableRow = {
+  id: string;
+  number: number;
+  businessId: string;
+  customerName: string;
+  total: number;
+  amountPaid: number;
+  balance: number;
+  createdAt: Date;
+};
+
+export async function getReceivables(
+  scope: BusinessScope
+): Promise<ReceivableRow[]> {
+  const rows = await db
+    .select({
+      id: orders.id,
+      number: orders.number,
+      businessId: orders.businessId,
+      customerName: orders.customerName,
+      total: orders.total,
+      amountPaid: orders.amountPaid,
+      createdAt: orders.createdAt,
+    })
+    .from(orders)
+    .where(
+      and(
+        ordersBiz(scope),
+        eq(orders.isCredit, true),
+        eq(orders.status, "entregado"),
+        sql`${orders.total} - ${orders.amountPaid} > 0`
+      )
+    )
+    .orderBy(desc(orders.createdAt));
+
+  return rows.map((r) => {
+    const total = Number(r.total);
+    const amountPaid = Number(r.amountPaid);
+    return {
+      id: r.id,
+      number: r.number,
+      businessId: r.businessId,
+      customerName: r.customerName,
+      total,
+      amountPaid,
+      balance: Math.round((total - amountPaid) * 100) / 100,
+      createdAt: r.createdAt,
+    };
+  });
 }
 
 // -------------------------------------------------------------------------
@@ -227,7 +304,8 @@ export async function getPerBusinessPL(
   const orderRows = await db
     .select({
       businessId: orders.businessId,
-      sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
+      // Ventas de contado entregadas (el crédito entra al cobrarse, abajo).
+      sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} = 'entregado' and ${orders.isCredit} = false${inRange(orders.createdAt, range)}), 0)::text`,
       referral: sql<string>`coalesce(sum(${orders.referralCommission}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
       shipping: sql<string>`coalesce(sum(${orders.shippingCompanyCost}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
       pending: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} not in ('entregado','cancelado')), 0)::text`,
@@ -235,6 +313,20 @@ export async function getPerBusinessPL(
     .from(orders)
     .where(ordersBiz(scope))
     .groupBy(orders.businessId);
+
+  // Abonos de crédito cobrados por negocio en el periodo (se suman a ventas).
+  const payRows = await db
+    .select({
+      businessId: orders.businessId,
+      collected: sql<string>`coalesce(sum(${orderPayments.amount}) filter (where true${inRange(orderPayments.paidAt, range)}), 0)::text`,
+    })
+    .from(orderPayments)
+    .innerJoin(orders, eq(orders.id, orderPayments.orderId))
+    .where(ordersBiz(scope))
+    .groupBy(orders.businessId);
+  const collectedByBiz = new Map(
+    payRows.map((p) => [p.businessId, Number(p.collected)])
+  );
 
   const txRows = await db
     .select({
@@ -252,7 +344,7 @@ export async function getPerBusinessPL(
   const general = txRows.find((t) => t.businessId === null);
 
   const businesses: BusinessPL[] = orderRows.map((o) => {
-    const sales = Number(o.sales);
+    const sales = Number(o.sales) + (collectedByBiz.get(o.businessId) ?? 0);
     const referral = Number(o.referral);
     const shipping = Number(o.shipping);
     const directExpense = expenseByBiz.get(o.businessId) ?? 0;

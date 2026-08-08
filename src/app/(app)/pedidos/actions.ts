@@ -7,6 +7,7 @@ import { db } from "@/db";
 import {
   orders,
   orderItems,
+  orderPayments,
   products,
   nakamaDesigns,
   nakamaBlanks,
@@ -14,7 +15,7 @@ import {
   customers,
   users,
 } from "@/db/schema";
-import { requirePermission } from "@/lib/session";
+import { can, getCurrentUser, requirePermission } from "@/lib/session";
 import { computeReferralCommission } from "@/lib/referrals";
 import { computeSellerCommission } from "@/lib/commissions";
 import {
@@ -37,6 +38,13 @@ function refresh() {
   revalidatePath("/pedidos");
   revalidatePath("/dashboard");
   revalidatePath("/inventario");
+}
+
+// Cobros y crédito tocan también finanzas (caja / cuentas por cobrar).
+function refreshCredit() {
+  revalidatePath("/pedidos");
+  revalidatePath("/finanzas");
+  revalidatePath("/dashboard");
 }
 
 function money(n: number): string {
@@ -111,6 +119,8 @@ const orderSchema = z.object({
   shippingCharge: z.coerce.number().min(0).default(0),
   shippingCompanyCost: z.coerce.number().min(0).default(0),
   notes: z.string().trim().optional(),
+  // Pedido a crédito ("por cobrar"): se entrega pero se cobra después.
+  isCredit: z.boolean().optional().default(false),
   items: z.array(itemSchema).min(1, "Agrega al menos un producto."),
 });
 
@@ -286,6 +296,7 @@ export async function createOrder(
           customerPhone: d.customerPhone || null,
           customerAddress: d.customerAddress || null,
           status: "pendiente",
+          isCredit: d.isCredit,
           sellerId: user.id,
           sellerCommission: money(sellerCommission),
           referrerId,
@@ -444,6 +455,130 @@ export async function setOrderShipping(
   revalidatePath("/envios");
   revalidatePath("/dashboard");
   return { ok: true };
+}
+
+// -------------------------------------------------------------------------
+// Cuentas por cobrar (crédito) + abonos
+// -------------------------------------------------------------------------
+
+// Cobrar / marcar crédito lo puede hacer quien gestiona pedidos o finanzas.
+async function requireCreditManager() {
+  const user = await getCurrentUser();
+  if (!user) return null;
+  if (can(user, "orders.manage") || can(user, "finance.manage")) return user;
+  return null;
+}
+
+// Marca o desmarca un pedido como "por cobrar". Desmarcar solo si no tiene abonos.
+export async function setOrderCredit(
+  orderId: string,
+  isCredit: boolean
+): Promise<ActionResult> {
+  const user = await requireCreditManager();
+  if (!user) return { ok: false, error: "No tienes permiso." };
+
+  const order = await db.query.orders.findFirst({ where: eq(orders.id, orderId) });
+  if (!order) return { ok: false, error: "Pedido no encontrado." };
+  if (user.role === "vendedor" && order.sellerId !== user.id)
+    return { ok: false, error: "No puedes modificar este pedido." };
+
+  if (!isCredit && Number(order.amountPaid) > 0)
+    return {
+      ok: false,
+      error: "No puedes quitar el crédito: el pedido ya tiene abonos.",
+    };
+
+  await db
+    .update(orders)
+    .set({ isCredit, updatedAt: new Date() })
+    .where(eq(orders.id, orderId));
+
+  refreshCredit();
+  return { ok: true };
+}
+
+const paymentSchema = z.object({
+  amount: z.coerce.number().positive("El monto debe ser mayor a 0."),
+  note: z.string().trim().optional(),
+});
+
+export type PaymentInput = z.input<typeof paymentSchema>;
+
+// Registra un abono (cobro parcial o total) de un pedido a crédito.
+export async function recordPayment(
+  orderId: string,
+  input: PaymentInput
+): Promise<ActionResult> {
+  const user = await requireCreditManager();
+  if (!user) return { ok: false, error: "No tienes permiso." };
+
+  const parsed = paymentSchema.safeParse(input);
+  if (!parsed.success)
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
+
+  const order = await db.query.orders.findFirst({ where: eq(orders.id, orderId) });
+  if (!order) return { ok: false, error: "Pedido no encontrado." };
+  if (user.role === "vendedor" && order.sellerId !== user.id)
+    return { ok: false, error: "No puedes cobrar este pedido." };
+  if (!order.isCredit)
+    return { ok: false, error: "Este pedido no está marcado como por cobrar." };
+
+  const total = Number(order.total);
+  const paid = Number(order.amountPaid);
+  const balance = Math.round((total - paid) * 100) / 100;
+  if (balance <= 0) return { ok: false, error: "El pedido ya está cobrado por completo." };
+
+  const amount = Math.min(parsed.data.amount, balance);
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(orderPayments).values({
+        orderId,
+        amount: money(amount),
+        note: parsed.data.note || null,
+        createdBy: user.id,
+      });
+      await tx
+        .update(orders)
+        .set({
+          amountPaid: sql`${orders.amountPaid} + ${money(amount)}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, orderId));
+    });
+    refreshCredit();
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "No se pudo registrar el cobro." };
+  }
+}
+
+// Revierte un abono (corrección). Descuenta el monto de lo cobrado.
+export async function deletePayment(paymentId: string): Promise<ActionResult> {
+  const user = await requireCreditManager();
+  if (!user) return { ok: false, error: "No tienes permiso." };
+
+  const payment = await db.query.orderPayments.findFirst({
+    where: eq(orderPayments.id, paymentId),
+  });
+  if (!payment) return { ok: false, error: "Cobro no encontrado." };
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.delete(orderPayments).where(eq(orderPayments.id, paymentId));
+      await tx
+        .update(orders)
+        .set({
+          amountPaid: sql`greatest(0, ${orders.amountPaid} - ${payment.amount})`,
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, payment.orderId));
+    });
+    refreshCredit();
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "No se pudo revertir el cobro." };
+  }
 }
 
 // -------------------------------------------------------------------------
