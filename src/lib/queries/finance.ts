@@ -4,6 +4,8 @@ import {
   orders,
   orderItems,
   orderPayments,
+  products,
+  nakamaBlanks,
   financeTransactions,
   debts,
 } from "@/db/schema";
@@ -224,6 +226,151 @@ export async function getWeeklyTrend(
       Number(o.referral) + Number(o.shipping) + Number(txRows[i]?.expense ?? 0);
     return { label: o.wk, income, expense, profit: income - expense };
   });
+}
+
+// -------------------------------------------------------------------------
+// Estado de resultados (P&L) — base DEVENGADO (ventas entregadas), con COGS.
+// Ingresos − COGS = Utilidad bruta − opex − comisiones − envíos = Utilidad neta.
+// -------------------------------------------------------------------------
+export type ProfitAndLoss = {
+  sales: number; // ventas entregadas (total de pedidos)
+  otherIncome: number; // ingresos manuales (no ventas)
+  income: number; // sales + otherIncome
+  cogs: number; // costo de mercancía vendida (con costo snapshot/actual)
+  grossProfit: number; // income − cogs
+  opex: number; // gastos operativos (movimientos manuales de egreso)
+  referral: number; // comisiones de referidos
+  shipping: number; // envíos asumidos por la empresa
+  netProfit: number; // bruta − opex − referral − shipping
+  grossMargin: number | null; // % sobre income
+  netMargin: number | null; // % sobre income
+  ordersCount: number;
+  units: number; // unidades entregadas en el periodo
+  unitsNoCost: number; // unidades sin costo conocido (COGS incompleto)
+};
+
+export async function getProfitAndLoss(
+  scope: BusinessScope,
+  range?: DateRange | null
+): Promise<ProfitAndLoss> {
+  const [ordersAgg] = await db
+    .select({
+      sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
+      referral: sql<string>`coalesce(sum(${orders.referralCommission}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
+      shipping: sql<string>`coalesce(sum(${orders.shippingCompanyCost}) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}), 0)::text`,
+      ordersCount: sql<number>`(count(*) filter (where ${orders.status} = 'entregado'${inRange(orders.createdAt, range)}))::int`,
+    })
+    .from(orders)
+    .where(ordersBiz(scope));
+
+  // COGS: costo por línea = cantidad × (costo snapshot, o costo actual del
+  // producto/suéter). Solo pedidos entregados en el periodo.
+  const costExpr = sql`coalesce(${orderItems.unitCost}, ${products.cost}, ${nakamaBlanks.cost})`;
+  const [cogsAgg] = await db
+    .select({
+      cogs: sql<string>`coalesce(sum(${orderItems.quantity} * ${costExpr}), 0)::text`,
+      units: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int`,
+      unitsNoCost: sql<number>`coalesce(sum(${orderItems.quantity}) filter (where ${costExpr} is null), 0)::int`,
+    })
+    .from(orderItems)
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .leftJoin(products, eq(products.id, orderItems.productId))
+    .leftJoin(nakamaBlanks, eq(nakamaBlanks.id, orderItems.blankId))
+    .where(and(eq(orders.status, "entregado"), ordersBiz(scope), whereRange(orders.createdAt, range)));
+
+  const [txAgg] = await db
+    .select({
+      income: sql<string>`coalesce(sum(${financeTransactions.amount}) filter (where ${financeTransactions.type} = 'income'${inRange(financeTransactions.date, range)}), 0)::text`,
+      expense: sql<string>`coalesce(sum(${financeTransactions.amount}) filter (where ${financeTransactions.type} = 'expense'${inRange(financeTransactions.date, range)}), 0)::text`,
+    })
+    .from(financeTransactions)
+    .where(txBiz(scope));
+
+  const sales = Number(ordersAgg?.sales ?? 0);
+  const otherIncome = Number(txAgg?.income ?? 0);
+  const income = sales + otherIncome;
+  const cogs = Number(cogsAgg?.cogs ?? 0);
+  const grossProfit = income - cogs;
+  const opex = Number(txAgg?.expense ?? 0);
+  const referral = Number(ordersAgg?.referral ?? 0);
+  const shipping = Number(ordersAgg?.shipping ?? 0);
+  const netProfit = grossProfit - opex - referral - shipping;
+
+  return {
+    sales,
+    otherIncome,
+    income,
+    cogs,
+    grossProfit,
+    opex,
+    referral,
+    shipping,
+    netProfit,
+    grossMargin: income > 0 ? (grossProfit / income) * 100 : null,
+    netMargin: income > 0 ? (netProfit / income) * 100 : null,
+    ordersCount: Number(ordersAgg?.ordersCount ?? 0),
+    units: Number(cogsAgg?.units ?? 0),
+    unitsNoCost: Number(cogsAgg?.unitsNoCost ?? 0),
+  };
+}
+
+// Top de productos por UTILIDAD (facturación − costo), por negocio.
+export type TopProfitProduct = {
+  name: string;
+  qty: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  margin: number | null;
+};
+export type TopProfitByBusiness = {
+  businessId: string;
+  items: TopProfitProduct[];
+};
+
+export async function getTopByProfit(
+  scope: BusinessScope,
+  range?: DateRange | null,
+  perBusiness = 5
+): Promise<TopProfitByBusiness[]> {
+  const costExpr = sql`coalesce(${orderItems.unitCost}, ${products.cost}, ${nakamaBlanks.cost}, 0)`;
+  const rows = await db
+    .select({
+      businessId: orders.businessId,
+      name: orderItems.description,
+      qty: sql<number>`sum(${orderItems.quantity})::int`,
+      revenue: sql<string>`coalesce(sum(${orderItems.lineTotal}), 0)::text`,
+      cost: sql<string>`coalesce(sum(${orderItems.quantity} * ${costExpr}), 0)::text`,
+    })
+    .from(orderItems)
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .leftJoin(products, eq(products.id, orderItems.productId))
+    .leftJoin(nakamaBlanks, eq(nakamaBlanks.id, orderItems.blankId))
+    .where(and(eq(orders.status, "entregado"), ordersBiz(scope), whereRange(orders.createdAt, range)))
+    .groupBy(orders.businessId, orderItems.description);
+
+  const byBiz = new Map<string, TopProfitProduct[]>();
+  for (const r of rows) {
+    const revenue = Number(r.revenue);
+    const cost = Number(r.cost);
+    const profit = revenue - cost;
+    const item: TopProfitProduct = {
+      name: r.name,
+      qty: Number(r.qty),
+      revenue,
+      cost,
+      profit,
+      margin: revenue > 0 ? (profit / revenue) * 100 : null,
+    };
+    const arr = byBiz.get(r.businessId) ?? [];
+    arr.push(item);
+    byBiz.set(r.businessId, arr);
+  }
+
+  return [...byBiz.entries()].map(([businessId, items]) => ({
+    businessId,
+    items: items.sort((a, b) => b.profit - a.profit).slice(0, perBusiness),
+  }));
 }
 
 // -------------------------------------------------------------------------

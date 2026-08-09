@@ -8,9 +8,15 @@ import {
 } from "@/components/ui/table";
 import { getBusiness } from "@/lib/constants";
 import { formatMoney } from "@/lib/format";
-import type { TopByBusiness } from "@/lib/queries/finance";
+import type { TopByBusiness, TopProfitByBusiness } from "@/lib/queries/finance";
 
-export function TopProductsTab({ groups }: { groups: TopByBusiness[] }) {
+export function TopProductsTab({
+  groups,
+  byProfit,
+}: {
+  groups: TopByBusiness[];
+  byProfit?: TopProfitByBusiness[] | null;
+}) {
   const hasData = groups.some((g) => g.items.length > 0);
 
   if (!hasData) {
@@ -21,12 +27,85 @@ export function TopProductsTab({ groups }: { groups: TopByBusiness[] }) {
     );
   }
 
+  const profitHasData = byProfit?.some((g) => g.items.length > 0);
+
   return (
-    <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
-      {groups.map((g) => (
-        <BusinessTop key={g.businessId} group={g} />
-      ))}
+    <div className="space-y-6">
+      <div>
+        <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
+          Por facturación (unidades vendidas)
+        </h3>
+        <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
+          {groups.map((g) => (
+            <BusinessTop key={g.businessId} group={g} />
+          ))}
+        </div>
+      </div>
+
+      {byProfit && profitHasData && (
+        <div>
+          <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
+            Por utilidad (facturación − costo)
+          </h3>
+          <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
+            {byProfit.map((g) => (
+              <BusinessTopProfit key={g.businessId} group={g} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function BusinessTopProfit({ group }: { group: TopProfitByBusiness }) {
+  const biz = getBusiness(group.businessId);
+  const color = biz?.color ?? "#7c3aed";
+  if (group.items.length === 0) return null;
+
+  return (
+    <section className="card-soft p-5">
+      <h3 className="mb-4 flex items-center gap-2 text-base font-semibold">
+        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+        {biz?.shortName ?? group.businessId}
+      </h3>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-8">#</TableHead>
+              <TableHead>Producto</TableHead>
+              <TableHead className="text-right">Utilidad</TableHead>
+              <TableHead className="text-right">Margen</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {group.items.map((it, i) => (
+              <TableRow key={`${it.name}-${i}`}>
+                <TableCell className="text-muted-foreground tabular-nums">
+                  {i + 1}
+                </TableCell>
+                <TableCell>
+                  <div className="font-medium">{it.name}</div>
+                  <div className="text-xs text-muted-foreground tabular-nums">
+                    {it.qty} uds · {formatMoney(it.revenue)} fact.
+                  </div>
+                </TableCell>
+                <TableCell
+                  className="text-right font-semibold tabular-nums"
+                  style={{ color: it.profit >= 0 ? "#059669" : "#e11d48" }}
+                >
+                  {formatMoney(it.profit)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">
+                  {it.margin === null ? "—" : `${it.margin.toFixed(0)}%`}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
   );
 }
 

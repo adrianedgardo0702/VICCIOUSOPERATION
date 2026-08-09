@@ -15,6 +15,8 @@ import {
   getWeeklyTrend,
   getTopProductsSold,
   getReceivables,
+  getProfitAndLoss,
+  getTopByProfit,
 } from "@/lib/queries/finance";
 import { getFinanceDashboard, deltaPct } from "@/lib/queries/dashboard";
 import { computePayoff, generateSuggestions } from "@/lib/finance";
@@ -35,6 +37,7 @@ import { BreakdownTab, type BreakdownItem } from "./_components/breakdown-tab";
 import { CategoriesTab } from "./_components/categories-tab";
 import { TopProductsTab } from "./_components/top-products-tab";
 import { ReceivablesTab } from "./_components/receivables-tab";
+import { PnlCard } from "./_components/pnl-card";
 
 const INCOME_PALETTE = ["#0891b2", "#0d9488", "#65a30d", "#2563eb", "#4f46e5"];
 const EXPENSE_PALETTE = [
@@ -55,6 +58,7 @@ export default async function FinanzasPage({
 }) {
   const user = await requirePermission("finance.view");
   const canManage = can(user, "finance.manage");
+  const canCosts = can(user, "finance.costs");
   const scope = await getCurrentBusiness();
   const { period: periodParam, from, to } = await searchParams;
   // Un rango "de fecha a fecha" tiene prioridad sobre los periodos rápidos.
@@ -72,6 +76,8 @@ export default async function FinanzasPage({
     receivables,
     debtRows,
     lowStockCount,
+    pnl,
+    topByProfit,
   ] = await Promise.all([
     getFinanceDashboard(scope),
     getCashFlow(scope, period.range),
@@ -84,6 +90,8 @@ export default async function FinanzasPage({
     getReceivables(scope),
     getDebts(),
     getLowStockCount(),
+    canCosts ? getProfitAndLoss(scope, period.range) : Promise.resolve(null),
+    canCosts ? getTopByProfit(scope, period.range, 5) : Promise.resolve(null),
   ]);
 
   const trend = dash.salesTrend.map((p, i) => ({
@@ -251,7 +259,8 @@ export default async function FinanzasPage({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="breakdown" className="mt-4">
+        <TabsContent value="breakdown" className="mt-4 space-y-5">
+          {pnl && <PnlCard pnl={pnl} />}
           <BreakdownTab
             pl={pl}
             incomeItems={incomeItems}
@@ -265,7 +274,7 @@ export default async function FinanzasPage({
         </TabsContent>
 
         <TabsContent value="top" className="mt-4">
-          <TopProductsTab groups={topProducts} />
+          <TopProductsTab groups={topProducts} byProfit={topByProfit} />
         </TabsContent>
 
         <TabsContent value="receivables" className="mt-4">
