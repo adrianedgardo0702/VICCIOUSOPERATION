@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, sql, type Column } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, lt, sql, type Column } from "drizzle-orm";
 import { db } from "@/db";
 import {
   orders,
@@ -251,6 +251,52 @@ export async function getAccountsSummary(
     else if (r.kind === "pagar") payable = Number(r.outstanding);
   }
   return { receivable, payable };
+}
+
+// Cuentas por cobrar/pagar MANUALES (todas las del scope, con saldo).
+export type AccountEntryRow = {
+  id: string;
+  businessId: string | null;
+  kind: string;
+  party: string;
+  concept: string | null;
+  amount: number;
+  amountPaid: number;
+  balance: number;
+  dueDate: Date | null;
+  status: string;
+  note: string | null;
+  createdAt: Date;
+};
+
+export async function getAccountEntries(
+  scope: BusinessScope
+): Promise<AccountEntryRow[]> {
+  const bizCond =
+    scope === "all" ? undefined : eq(accountEntries.businessId, scope);
+  const rows = await db
+    .select()
+    .from(accountEntries)
+    .where(bizCond)
+    .orderBy(desc(accountEntries.createdAt));
+  return rows.map((r) => {
+    const amount = Number(r.amount);
+    const amountPaid = Number(r.amountPaid);
+    return {
+      id: r.id,
+      businessId: r.businessId,
+      kind: r.kind,
+      party: r.party,
+      concept: r.concept,
+      amount,
+      amountPaid,
+      balance: Math.round((amount - amountPaid) * 100) / 100,
+      dueDate: r.dueDate,
+      status: r.status,
+      note: r.note,
+      createdAt: r.createdAt,
+    };
+  });
 }
 
 // COGS por negocio (para "ganancia por negocio" en el dashboard).
@@ -615,6 +661,16 @@ export async function getTransactions(
     .where(and(txBiz(scope), whereRange(financeTransactions.date, range)))
     .orderBy(desc(financeTransactions.date))
     .limit(limit);
+}
+
+// Movimientos futuros programados: transacciones con fecha posterior a hoy.
+export async function getFutureTransactions(scope: BusinessScope) {
+  return db
+    .select()
+    .from(financeTransactions)
+    .where(and(txBiz(scope), gt(financeTransactions.date, new Date())))
+    .orderBy(asc(financeTransactions.date))
+    .limit(50);
 }
 
 export async function getDebts() {

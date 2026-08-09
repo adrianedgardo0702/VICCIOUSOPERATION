@@ -8,6 +8,8 @@ import {
   Percent,
   Users2,
   UserCog,
+  ArrowLeftRight,
+  HandCoins,
   type LucideIcon,
 } from "lucide-react";
 import type { Permission } from "@/lib/constants";
@@ -36,11 +38,14 @@ export const ALL_NAV_ITEMS: NavItem[] = [
 ];
 
 // --- APP FINANCIERA ---
-// Este proyecto es, por ahora, la app de FINANZAS. Solo se muestran estos
-// módulos; el resto del código queda intacto para extraerse a sus propias apps.
-// Para volver a mostrar todo, usar ALL_NAV_ITEMS aquí.
-const FINANCE_APP_HREFS = new Set(["/dashboard", "/finanzas", "/comisiones"]);
-
-export const NAV_ITEMS: NavItem[] = ALL_NAV_ITEMS.filter((i) =>
-  FINANCE_APP_HREFS.has(i.href)
-);
+// Este proyecto es, por ahora, la app de FINANZAS. El sidebar muestra solo estas
+// secciones (en este orden); el resto de módulos (inventario, pedidos, CRM,
+// envíos, referidos, usuarios) siguen en ALL_NAV_ITEMS para extraerse luego a
+// sus propias apps del monorepo.
+export const NAV_ITEMS: NavItem[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard.view" },
+  { href: "/finanzas", label: "Finanzas / CFO", icon: Wallet, permission: "finance.view" },
+  { href: "/flujo", label: "Flujo de caja", icon: ArrowLeftRight, permission: "finance.view" },
+  { href: "/cuentas", label: "Cuentas por cobrar / pagar", icon: HandCoins, permission: "finance.view" },
+  { href: "/comisiones", label: "Comisiones", icon: Percent, permission: "commissions.view" },
+];
