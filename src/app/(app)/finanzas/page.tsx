@@ -17,6 +17,7 @@ import {
   getProfitAndLoss,
   getTopByProfit,
 } from "@/lib/queries/finance";
+import { getCreditCards } from "@/lib/queries/cards";
 import { getFinanceDashboard, deltaPct } from "@/lib/queries/dashboard";
 import { computePayoff, generateSuggestions } from "@/lib/finance";
 import {
@@ -73,6 +74,7 @@ export default async function FinanzasPage({
     topProducts,
     receivables,
     debtRows,
+    cards,
     lowStockCount,
     pnl,
     topByProfit,
@@ -87,6 +89,7 @@ export default async function FinanzasPage({
     getTopProductsSold(scope, period.range, 5),
     getReceivables(scope),
     getDebts(),
+    getCreditCards(scope),
     getLowStockCount(),
     canCosts ? getProfitAndLoss(scope, period.range) : Promise.resolve(null),
     canCosts ? getTopByProfit(scope, period.range, 5) : Promise.resolve(null),
@@ -158,13 +161,24 @@ export default async function FinanzasPage({
     ...txCats.expense.map((c) => ({ category: c.category, amount: c.amount, count: c.count })),
   ].sort((a, b) => b.amount - a.amount);
 
-  const debtList = debtRows.map((d) => ({
-    id: d.id,
-    name: d.name,
-    balance: Number(d.balance),
-    annualRate: Number(d.annualRate),
-    minimumPayment: Number(d.minimumPayment),
-  }));
+  const debtList = [
+    ...debtRows.map((d) => ({
+      id: d.id,
+      name: d.name,
+      balance: Number(d.balance),
+      annualRate: Number(d.annualRate),
+      minimumPayment: Number(d.minimumPayment),
+    })),
+    ...cards
+      .filter((c) => c.status !== "cerrada" && c.balance > 0)
+      .map((c) => ({
+        id: `card:${c.id}`,
+        name: c.name,
+        balance: c.balance,
+        annualRate: c.annualRate,
+        minimumPayment: c.minimumPayment,
+      })),
+  ];
 
   const totalDebt = debtList.reduce((s, d) => s + d.balance, 0);
   const totalMin = debtList.reduce((s, d) => s + d.minimumPayment, 0);
@@ -300,8 +314,10 @@ export default async function FinanzasPage({
         <TabsContent value="debts" className="mt-4">
           <DebtsTab
             debts={debtRows}
+            cards={cards}
             canManage={canManage}
             monthlyBalance={Math.max(0, cashFlow.balance)}
+            scope={scope}
           />
         </TabsContent>
 

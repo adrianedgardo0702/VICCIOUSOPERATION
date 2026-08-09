@@ -400,3 +400,41 @@ export function getShippingMethod(id: string | null | undefined) {
   if (!id) return undefined;
   return SHIPPING_METHODS.find((m) => m.id === id);
 }
+
+// ----------------------------------------------------------------------------
+// Tarjetas de crédito (Fase E)
+// ----------------------------------------------------------------------------
+
+export const CARD_BRANDS = [
+  { value: "visa", label: "Visa" },
+  { value: "mastercard", label: "Mastercard" },
+  { value: "amex", label: "American Express" },
+] as const;
+
+export type CardBrand = (typeof CARD_BRANDS)[number]["value"];
+
+export function getCardBrand(v: string | null | undefined) {
+  return CARD_BRANDS.find((b) => b.value === v);
+}
+
+export const CARD_STATUSES = [
+  { value: "activa", label: "Activa", color: "#059669" },
+  { value: "pausada", label: "Pausada", color: "#d97706" },
+  { value: "cerrada", label: "Cerrada", color: "#6b7280" },
+] as const;
+
+export function getCardStatus(v: string | null | undefined) {
+  return CARD_STATUSES.find((s) => s.value === v);
+}
+
+// Movimientos de tarjeta: cómo afecta cada tipo al saldo utilizado.
+export const CARD_MOVEMENT_TYPES = [
+  { value: "cargo", label: "Compra / cargo", sign: 1 },
+  { value: "pago", label: "Pago", sign: -1 },
+  { value: "interes", label: "Interés", sign: 1 },
+  { value: "ajuste", label: "Ajuste de saldo", sign: 1 },
+] as const;
+
+export function getCardMovementType(v: string | null | undefined) {
+  return CARD_MOVEMENT_TYPES.find((t) => t.value === v);
+}

@@ -44,6 +44,9 @@ import { cn } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
 import { computePayoff, type DebtLike } from "@/lib/finance";
 import type { Debt } from "@/db/schema";
+import type { BusinessScope } from "@/lib/business";
+import type { CreditCardView } from "@/lib/queries/cards";
+import { CreditCardsSection } from "./credit-cards-section";
 import {
   createDebt,
   updateDebt,
@@ -54,25 +57,41 @@ import {
 
 export function DebtsTab({
   debts,
+  cards,
   canManage,
   monthlyBalance,
+  scope,
 }: {
   debts: Debt[];
+  cards: CreditCardView[];
   canManage: boolean;
   monthlyBalance: number;
+  scope: BusinessScope;
 }) {
   const [dialog, setDialog] = useState<{ open: boolean; debt?: Debt }>({ open: false });
 
+  // El planificador integra deudas + tarjetas de crédito (mismo modelo:
+  // saldo, tasa y pago mínimo). Las tarjetas cerradas o sin saldo se ignoran.
   const debtList: DebtLike[] = useMemo(
-    () =>
-      debts.map((d) => ({
+    () => [
+      ...debts.map((d) => ({
         id: d.id,
         name: d.name,
         balance: Number(d.balance),
         annualRate: Number(d.annualRate),
         minimumPayment: Number(d.minimumPayment),
       })),
-    [debts]
+      ...cards
+        .filter((c) => c.status !== "cerrada" && c.balance > 0)
+        .map((c) => ({
+          id: `card:${c.id}`,
+          name: `💳 ${c.name}`,
+          balance: c.balance,
+          annualRate: c.annualRate,
+          minimumPayment: c.minimumPayment,
+        })),
+    ],
+    [debts, cards]
   );
 
   const totalDebt = debtList.reduce((s, d) => s + d.balance, 0);
@@ -91,12 +110,18 @@ export function DebtsTab({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
+      <CreditCardsSection cards={cards} canManage={canManage} scope={scope} />
+
       <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Deuda total: <span className="font-semibold text-foreground">{formatMoney(totalDebt)}</span>
-          {" · "}Pagos mínimos/mes:{" "}
-          <span className="font-medium text-foreground">{formatMoney(totalMin)}</span>
+        <div>
+          <h3 className="text-lg font-semibold">Otras deudas</h3>
+          <div className="text-sm text-muted-foreground">
+            Deuda total (con tarjetas):{" "}
+            <span className="font-semibold text-foreground">{formatMoney(totalDebt)}</span>
+            {" · "}Pagos mínimos/mes:{" "}
+            <span className="font-medium text-foreground">{formatMoney(totalMin)}</span>
+          </div>
         </div>
         {canManage && (
           <Button onClick={() => setDialog({ open: true })}>

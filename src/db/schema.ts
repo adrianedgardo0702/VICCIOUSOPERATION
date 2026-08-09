@@ -507,3 +507,161 @@ export type Debt = typeof debts.$inferSelect;
 export type Budget = typeof budgets.$inferSelect;
 export type AccountEntry = typeof accountEntries.$inferSelect;
 export type DebtPayment = typeof debtPayments.$inferSelect;
+
+// ==========================================================================
+// FASE E — CFO: tarjetas de crédito, tesorería, metas, cierre mensual
+// ==========================================================================
+
+// Tarjetas de crédito (a nivel empresa; business_id nulo = general/personal).
+// El saldo se maneja con movimientos (credit_card_movements). El crédito
+// disponible y el % de utilización se calculan (límite − saldo).
+export const creditCards = pgTable(
+  "credit_cards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: text("business_id").references(() => businesses.id, {
+      onDelete: "cascade",
+    }), // null = general / personal
+    bank: text("bank").notNull(), // Banco emisor
+    name: text("name").notNull(), // Nombre personalizado ("Visa negocios")
+    brand: text("brand").notNull().default("visa"), // 'visa' | 'mastercard' | 'amex'
+    last4: text("last4"), // Últimos 4 dígitos
+    creditLimit: numeric("credit_limit", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    balance: numeric("balance", { precision: 12, scale: 2 }).notNull().default("0"), // saldo utilizado
+    annualRate: numeric("annual_rate", { precision: 6, scale: 2 }).notNull().default("0"), // tasa % anual
+    minimumPayment: numeric("minimum_payment", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    cutDay: integer("cut_day"), // día del mes: fecha de corte (1-31)
+    paymentDay: integer("payment_day"), // día del mes: fecha límite de pago (1-31)
+    status: text("status").notNull().default("activa"), // activa | pausada | cerrada
+    color: text("color"), // color/acento opcional para el diseño de la tarjeta
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_credit_cards_business").on(t.businessId)]
+);
+
+// Movimientos de una tarjeta: cargos (compras), pagos, intereses y ajustes.
+// balanceAfter guarda el saldo tras el movimiento (historial/evolución fácil).
+// Un pago puede reflejarse como egreso en caja (finance_tx_id) para revertirlo.
+export const creditCardMovements = pgTable(
+  "credit_card_movements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    cardId: uuid("card_id")
+      .notNull()
+      .references(() => creditCards.id, { onDelete: "cascade" }),
+    type: text("type").notNull(), // 'cargo' | 'pago' | 'interes' | 'ajuste'
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(), // siempre positivo
+    description: text("description"),
+    date: timestamp("date", { withTimezone: true }).defaultNow().notNull(),
+    balanceAfter: numeric("balance_after", { precision: 12, scale: 2 }), // snapshot del saldo
+    financeTxId: uuid("finance_tx_id").references(() => financeTransactions.id, {
+      onDelete: "set null",
+    }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_cc_movements_card").on(t.cardId),
+    index("idx_cc_movements_date").on(t.date),
+  ]
+);
+
+// Cuentas bancarias y caja (efectivo). business_id nulo = general.
+export const bankAccounts = pgTable(
+  "bank_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: text("business_id").references(() => businesses.id, {
+      onDelete: "cascade",
+    }), // null = general
+    name: text("name").notNull(),
+    type: text("type").notNull().default("banco"), // 'banco' | 'efectivo'
+    bank: text("bank"), // nombre del banco (si aplica)
+    balance: numeric("balance", { precision: 12, scale: 2 }).notNull().default("0"),
+    color: text("color"),
+    active: boolean("active").notNull().default(true),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_bank_accounts_business").on(t.businessId)]
+);
+
+// Gastos recurrentes (suscripciones, alquiler, sueldos…). Alimentan la
+// proyección de flujo y se pueden convertir en egreso real con un clic.
+export const recurringExpenses = pgTable(
+  "recurring_expenses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: text("business_id").references(() => businesses.id, {
+      onDelete: "cascade",
+    }), // null = general
+    name: text("name").notNull(),
+    category: text("category").notNull(),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    frequency: text("frequency").notNull().default("mensual"), // 'mensual' | 'semanal' | 'anual'
+    dayOfMonth: integer("day_of_month"), // día del mes (mensual/anual)
+    active: boolean("active").notNull().default(true),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_recurring_expenses_business").on(t.businessId)]
+);
+
+// Metas financieras (ahorro, fondo, objetivo de utilidad…).
+export const financialGoals = pgTable(
+  "financial_goals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: text("business_id").references(() => businesses.id, {
+      onDelete: "cascade",
+    }), // null = general
+    name: text("name").notNull(),
+    targetAmount: numeric("target_amount", { precision: 12, scale: 2 }).notNull(),
+    currentAmount: numeric("current_amount", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    status: text("status").notNull().default("activa"), // activa | lograda | pausada
+    color: text("color"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_financial_goals_business").on(t.businessId)]
+);
+
+// Cierre financiero mensual: snapshot del P&L del mes al momento de cerrar.
+// business_id nulo = consolidado. Uno por (negocio, mes).
+export const monthlyClosures = pgTable(
+  "monthly_closures",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: text("business_id").references(() => businesses.id, {
+      onDelete: "cascade",
+    }), // null = consolidado
+    monthKey: text("month_key").notNull(), // "YYYY-MM"
+    income: numeric("income", { precision: 12, scale: 2 }).notNull().default("0"),
+    cogs: numeric("cogs", { precision: 12, scale: 2 }).notNull().default("0"),
+    opex: numeric("opex", { precision: 12, scale: 2 }).notNull().default("0"), // gastos + comisiones + envíos
+    netProfit: numeric("net_profit", { precision: 12, scale: 2 }).notNull().default("0"),
+    note: text("note"),
+    closedBy: uuid("closed_by").references(() => users.id, { onDelete: "set null" }),
+    closedAt: timestamp("closed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_monthly_closure").on(t.businessId, t.monthKey)]
+);
+
+export type CreditCard = typeof creditCards.$inferSelect;
+export type CreditCardMovement = typeof creditCardMovements.$inferSelect;
+export type BankAccount = typeof bankAccounts.$inferSelect;
+export type RecurringExpense = typeof recurringExpenses.$inferSelect;
+export type FinancialGoal = typeof financialGoals.$inferSelect;
+export type MonthlyClosure = typeof monthlyClosures.$inferSelect;
