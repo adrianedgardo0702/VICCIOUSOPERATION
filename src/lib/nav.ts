@@ -12,6 +12,7 @@ import {
   HandCoins,
   Target,
   FileText,
+  Landmark,
   type LucideIcon,
 } from "lucide-react";
 import type { Permission } from "@/lib/constants";
@@ -48,6 +49,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard.view" },
   { href: "/finanzas", label: "Finanzas / CFO", icon: Wallet, permission: "finance.view" },
   { href: "/flujo", label: "Flujo de caja", icon: ArrowLeftRight, permission: "finance.view" },
+  { href: "/tesoreria", label: "Tesorería", icon: Landmark, permission: "finance.view" },
   { href: "/presupuestos", label: "Presupuestos", icon: Target, permission: "finance.view" },
   { href: "/cuentas", label: "Cuentas por cobrar / pagar", icon: HandCoins, permission: "finance.view" },
   { href: "/comisiones", label: "Comisiones", icon: Percent, permission: "commissions.view" },

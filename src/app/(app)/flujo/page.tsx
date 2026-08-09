@@ -11,8 +11,10 @@ import {
   getFutureTransactions,
 } from "@/lib/queries/finance";
 import { getFinanceDashboard } from "@/lib/queries/dashboard";
+import { getCashProjection } from "@/lib/queries/treasury";
 import { PeriodFilter } from "@/components/period-filter";
 import { BarsChart } from "@/components/charts/bars-chart";
+import { ProjectionSection } from "./_components/projection";
 import {
   Table,
   TableBody,
@@ -36,12 +38,13 @@ export default async function FlujoPage({
   const { period: periodParam, from, to } = await searchParams;
   const period = resolveCustomRange(from, to) ?? resolvePeriod(periodParam);
 
-  const [cf, transactions, weekly, dash, future] = await Promise.all([
+  const [cf, transactions, weekly, dash, future, projection] = await Promise.all([
     getCashFlow(scope, period.range),
     getTransactions(scope, period.range),
     getWeeklyTrend(scope, 8),
     getFinanceDashboard(scope),
     getFutureTransactions(scope),
+    getCashProjection(scope),
   ]);
 
   const monthlyTrend = dash.salesTrend.map((p, i) => ({
@@ -97,6 +100,9 @@ export default async function FlujoPage({
           </div>
         </section>
       </div>
+
+      {/* Proyección 30/60/90 */}
+      <ProjectionSection projection={projection} />
 
       {/* Movimientos futuros programados */}
       {future.length > 0 && (
