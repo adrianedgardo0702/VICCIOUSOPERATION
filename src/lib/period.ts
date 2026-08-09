@@ -12,10 +12,6 @@ export type ResolvedPeriod = {
 
 export const FINANCE_PERIODS = [
   { value: "hoy", label: "Hoy" },
-  { value: "semana", label: "Esta semana" },
-  { value: "semana-pasada", label: "Semana pasada" },
-  { value: "mes", label: "Este mes" },
-  { value: "mes-pasado", label: "Mes pasado" },
   { value: "3m", label: "Últimos 3 meses" },
   { value: "anio", label: "Este año" },
   { value: "todo", label: "Histórico" },
@@ -32,21 +28,6 @@ function panNow(): Date {
 // Medianoche de Panamá del día 1 del mes (y, m) — m base 0, con overflow válido.
 function monthStart(y: number, m: number): Date {
   return new Date(Date.UTC(y, m, 1, 5));
-}
-
-// Lunes 00:00 de Panamá de la semana que contiene `d`. La semana empieza lunes.
-// `offsetWeeks` desplaza n semanas (negativo = hacia atrás).
-function weekStart(d: Date, offsetWeeks = 0): Date {
-  const day = d.getUTCDay(); // 0=domingo … 6=sábado (campos UTC = reloj de Panamá)
-  const backToMonday = (day + 6) % 7;
-  return new Date(
-    Date.UTC(
-      d.getUTCFullYear(),
-      d.getUTCMonth(),
-      d.getUTCDate() - backToMonday + offsetWeeks * 7,
-      5
-    )
-  );
 }
 
 // Convierte "YYYY-MM-DD" a la medianoche de Panamá de ese día (00:00 UTC-5).
@@ -108,12 +89,12 @@ export function resolveCustomRange(from?: string, to?: string): ResolvedPeriod |
 }
 
 export function resolvePeriod(value?: string): ResolvedPeriod {
-  const v = isFinancePeriod(value) ? (value as string) : "mes";
+  const v = isFinancePeriod(value) ? (value as string) : "3m";
   const now = panNow();
   const y = now.getUTCFullYear();
   const m = now.getUTCMonth();
 
-  const label = FINANCE_PERIODS.find((p) => p.value === v)?.label ?? "Este mes";
+  const label = FINANCE_PERIODS.find((p) => p.value === v)?.label ?? "Últimos 3 meses";
 
   // Medianoche de Panamá del día actual desplazada `offsetDays`.
   const dayStart = (offsetDays: number) =>
@@ -126,34 +107,6 @@ export function resolvePeriod(value?: string): ResolvedPeriod {
         label,
         range: { start: dayStart(0), end: dayStart(1) },
         prev: { start: dayStart(-1), end: dayStart(0) },
-      };
-    case "semana":
-      return {
-        value: v,
-        label,
-        range: { start: weekStart(now, 0), end: weekStart(now, 1) },
-        prev: { start: weekStart(now, -1), end: weekStart(now, 0) },
-      };
-    case "semana-pasada":
-      return {
-        value: v,
-        label,
-        range: { start: weekStart(now, -1), end: weekStart(now, 0) },
-        prev: { start: weekStart(now, -2), end: weekStart(now, -1) },
-      };
-    case "mes":
-      return {
-        value: v,
-        label,
-        range: { start: monthStart(y, m), end: monthStart(y, m + 1) },
-        prev: { start: monthStart(y, m - 1), end: monthStart(y, m) },
-      };
-    case "mes-pasado":
-      return {
-        value: v,
-        label,
-        range: { start: monthStart(y, m - 1), end: monthStart(y, m) },
-        prev: { start: monthStart(y, m - 2), end: monthStart(y, m - 1) },
       };
     case "3m":
       return {

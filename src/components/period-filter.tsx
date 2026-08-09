@@ -19,7 +19,7 @@ export function PeriodFilter({
 }) {
   const isCustom = active === "custom";
   return (
-    <div className="flex flex-col items-end gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       <div className="flex flex-wrap gap-1 rounded-lg border bg-card p-1">
         {FINANCE_PERIODS.map((p) => {
           const on = p.value === active;
@@ -72,7 +72,7 @@ export function PeriodFilter({
             variant="ghost"
             className="h-8"
             nativeButton={false}
-            render={<Link href={`${basePath}?period=mes`} />}
+            render={<Link href={`${basePath}?period=3m`} />}
           >
             Limpiar
           </Button>
