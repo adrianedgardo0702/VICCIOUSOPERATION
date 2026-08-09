@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
-import { requireUser, can } from "@/lib/session";
+import { requireUser } from "@/lib/session";
 import { getCurrentBusiness } from "@/lib/business";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { UserMenu } from "@/components/user-menu";
@@ -15,7 +14,6 @@ export default async function AppLayout({
 }) {
   const user = await requireUser();
   const scope = await getCurrentBusiness();
-  const canOrder = can(user, "orders.manage");
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -31,7 +29,7 @@ export default async function AppLayout({
           >
             Vicious Lab
             <span className="block text-[11px] font-normal text-sidebar-foreground">
-              Operaciones
+              Finanzas
             </span>
           </Link>
         </div>
@@ -42,18 +40,6 @@ export default async function AppLayout({
           </p>
           <SidebarNav role={user.role} />
         </div>
-
-        {canOrder && (
-          <div className="px-3 pt-3">
-            <Link
-              href="/pedidos/nuevo"
-              className="flex items-center justify-center gap-2 rounded-xl bg-sidebar-primary px-4 py-2.5 text-sm font-medium text-sidebar-primary-foreground transition-opacity hover:opacity-90"
-            >
-              <Plus className="h-4 w-4" />
-              Nuevo pedido
-            </Link>
-          </div>
-        )}
 
         {/* Sesión */}
         <div className="mt-2 border-t border-sidebar-foreground/10 p-3">
