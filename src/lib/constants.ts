@@ -141,6 +141,7 @@ export const PERMISSIONS = [
   "dashboard.view",
   "finance.view",
   "finance.manage",
+  "finance.costs", // ver costos, COGS, márgenes y utilidad (dato sensible)
   "inventory.view",
   "inventory.manage",
   "orders.view",
@@ -229,6 +230,7 @@ export const GRANTABLE_PERMISSIONS: { value: Permission; label: string }[] = [
   { value: "shipping.manage", label: "Gestionar envíos" },
   { value: "finance.view", label: "Ver finanzas" },
   { value: "finance.manage", label: "Gestionar finanzas" },
+  { value: "finance.costs", label: "Ver costos y márgenes (sensible)" },
   { value: "commissions.manage", label: "Gestionar comisiones" },
   { value: "referrals.manage", label: "Gestionar referidos" },
   { value: "users.view", label: "Ver usuarios" },

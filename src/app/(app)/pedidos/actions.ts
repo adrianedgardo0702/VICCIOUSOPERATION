@@ -147,6 +147,7 @@ export async function createOrder(
     description: string;
     quantity: number;
     unitPrice: number;
+    unitCost: number | null; // costo snapshot para COGS (null = desconocido)
   };
   const resolved: Resolved[] = [];
 
@@ -192,6 +193,8 @@ export async function createOrder(
                   override: custOverride,
                   levelDiscounts: levelMap,
                 }),
+          // COGS Nakama = costo del suéter en blanco (el DTF no lleva costo).
+          unitCost: blank.cost != null ? Number(blank.cost) : null,
         });
       } else {
         if (!it.productId) return { ok: false, error: "Selecciona un producto." };
@@ -215,6 +218,7 @@ export async function createOrder(
                   override: custOverride,
                   levelDiscounts: levelMap,
                 }),
+          unitCost: product.cost != null ? Number(product.cost) : null,
         });
       }
     }
@@ -322,6 +326,7 @@ export async function createOrder(
           description: r.description,
           quantity: r.quantity,
           unitPrice: money(r.unitPrice),
+          unitCost: r.unitCost != null ? money(r.unitCost) : null,
           lineTotal: money(r.unitPrice * r.quantity),
         }))
       );

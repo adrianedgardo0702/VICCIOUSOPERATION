@@ -259,6 +259,8 @@ export const orders = pgTable(
     amountPaid: numeric("amount_paid", { precision: 12, scale: 2 })
       .notNull()
       .default("0"),
+    // Vencimiento del cobro (solo pedidos a crédito). null = sin fecha fija.
+    dueDate: timestamp("due_date", { withTimezone: true }),
     // true una vez que el pedido descontó inventario (evita doble descuento).
     stockApplied: boolean("stock_applied").notNull().default(false),
     notes: text("notes"),
@@ -295,6 +297,9 @@ export const orderItems = pgTable(
     description: text("description").notNull(),
     quantity: integer("quantity").notNull().default(1),
     unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull().default("0"),
+    // Costo unitario al momento de vender (snapshot para COGS / utilidad bruta).
+    // null = no se capturó (pedido viejo o sin costo): se estima con el costo actual.
+    unitCost: numeric("unit_cost", { precision: 12, scale: 2 }),
     lineTotal: numeric("line_total", { precision: 12, scale: 2 }).notNull().default("0"),
   },
   (t) => [index("idx_order_items_order").on(t.orderId)]
@@ -445,6 +450,60 @@ export const debtPayments = pgTable(
   (t) => [index("idx_debt_payments_debt").on(t.debtId)]
 );
 
+// Presupuestos por negocio + categoría + mes ("YYYY-MM"). El "gastado" se
+// calcula sumando finance_transactions (egresos) de ese negocio/categoría/mes.
+export const budgets = pgTable(
+  "budgets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: text("business_id").references(() => businesses.id, {
+      onDelete: "cascade",
+    }), // null = general / toda la empresa
+    category: text("category").notNull(), // publicidad, inventario, operaciones, proyectos, otros…
+    monthKey: text("month_key").notNull(), // "YYYY-MM"
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull().default("0"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_budgets_business").on(t.businessId),
+    uniqueIndex("uq_budget_scope").on(t.businessId, t.category, t.monthKey),
+  ]
+);
+
+// Cuentas por cobrar / pagar MANUALES (no ligadas a un pedido). Las cuentas por
+// cobrar de pedidos a crédito viven en orders; la vista une ambas fuentes.
+export const accountEntries = pgTable(
+  "account_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: text("business_id").references(() => businesses.id, {
+      onDelete: "cascade",
+    }), // null = general
+    kind: text("kind").notNull(), // 'cobrar' (nos deben) | 'pagar' (debemos)
+    party: text("party").notNull(), // quién debe / a quién le debemos
+    concept: text("concept"), // descripción del concepto
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    amountPaid: numeric("amount_paid", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    status: text("status").notNull().default("pendiente"), // pendiente | parcial | saldado | cancelado
+    note: text("note"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_account_entries_business").on(t.businessId),
+    index("idx_account_entries_kind").on(t.kind),
+    index("idx_account_entries_due").on(t.dueDate),
+  ]
+);
+
 export type FinanceTransaction = typeof financeTransactions.$inferSelect;
 export type Debt = typeof debts.$inferSelect;
+export type Budget = typeof budgets.$inferSelect;
+export type AccountEntry = typeof accountEntries.$inferSelect;
 export type DebtPayment = typeof debtPayments.$inferSelect;

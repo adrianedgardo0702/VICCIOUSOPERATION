@@ -11,6 +11,7 @@ export type ResolvedPeriod = {
 };
 
 export const FINANCE_PERIODS = [
+  { value: "hoy", label: "Hoy" },
   { value: "semana", label: "Esta semana" },
   { value: "semana-pasada", label: "Semana pasada" },
   { value: "mes", label: "Este mes" },
@@ -114,7 +115,18 @@ export function resolvePeriod(value?: string): ResolvedPeriod {
 
   const label = FINANCE_PERIODS.find((p) => p.value === v)?.label ?? "Este mes";
 
+  // Medianoche de Panamá del día actual desplazada `offsetDays`.
+  const dayStart = (offsetDays: number) =>
+    new Date(Date.UTC(y, m, now.getUTCDate() + offsetDays, 5));
+
   switch (v) {
+    case "hoy":
+      return {
+        value: v,
+        label,
+        range: { start: dayStart(0), end: dayStart(1) },
+        prev: { start: dayStart(-1), end: dayStart(0) },
+      };
     case "semana":
       return {
         value: v,
