@@ -8,6 +8,7 @@ import {
   nakamaBlanks,
   financeTransactions,
   accountEntries,
+  budgets,
   debts,
 } from "@/db/schema";
 import type { BusinessScope } from "@/lib/business";
@@ -661,6 +662,67 @@ export async function getTransactions(
     .where(and(txBiz(scope), whereRange(financeTransactions.date, range)))
     .orderBy(desc(financeTransactions.date))
     .limit(limit);
+}
+
+// Presupuestos del mes con lo gastado (egresos de esa categoría/negocio/mes).
+export type BudgetRow = {
+  id: string;
+  businessId: string | null;
+  category: string;
+  amount: number;
+  spent: number;
+  remaining: number;
+  pct: number; // % utilizado
+};
+
+export async function getBudgets(
+  scope: BusinessScope,
+  monthKey: string
+): Promise<BudgetRow[]> {
+  const [y, mo] = monthKey.split("-").map(Number);
+  const start = new Date(Date.UTC(y, mo - 1, 1, 5));
+  const end = new Date(Date.UTC(y, mo, 1, 5));
+  const bizBudget = scope === "all" ? undefined : eq(budgets.businessId, scope);
+
+  const rows = await db
+    .select()
+    .from(budgets)
+    .where(and(eq(budgets.monthKey, monthKey), bizBudget))
+    .orderBy(desc(budgets.amount));
+
+  const exp = await db
+    .select({
+      businessId: financeTransactions.businessId,
+      category: financeTransactions.category,
+      spent: sql<string>`coalesce(sum(${financeTransactions.amount}), 0)::text`,
+    })
+    .from(financeTransactions)
+    .where(
+      and(
+        eq(financeTransactions.type, "expense"),
+        gte(financeTransactions.date, start),
+        lt(financeTransactions.date, end),
+        txBiz(scope)
+      )
+    )
+    .groupBy(financeTransactions.businessId, financeTransactions.category);
+
+  const key = (b: string | null, c: string) => `${b ?? "general"}::${c}`;
+  const spentMap = new Map(exp.map((e) => [key(e.businessId, e.category), Number(e.spent)]));
+
+  return rows.map((r) => {
+    const amount = Number(r.amount);
+    const spent = spentMap.get(key(r.businessId, r.category)) ?? 0;
+    return {
+      id: r.id,
+      businessId: r.businessId,
+      category: r.category,
+      amount,
+      spent,
+      remaining: Math.round((amount - spent) * 100) / 100,
+      pct: amount > 0 ? (spent / amount) * 100 : 0,
+    };
+  });
 }
 
 // Movimientos futuros programados: transacciones con fecha posterior a hoy.
