@@ -55,11 +55,11 @@ export default async function AppLayout({
 
       {/* Contenido */}
       <div className="flex flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-4 border-b border-border bg-background/80 px-4 backdrop-blur md:px-6">
+        <header className="sticky top-0 z-10 flex h-12 items-center justify-between gap-4 border-b border-border bg-background/80 px-4 backdrop-blur md:px-6">
           <BusinessSwitcher value={scope} />
           <UserMenu name={user.name} email={user.email} role={user.role} />
         </header>
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 md:px-6 md:py-4">{children}</main>
       </div>
     </div>
   );

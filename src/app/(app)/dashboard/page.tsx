@@ -109,17 +109,15 @@ export default async function DashboardPage({
   const totalBizSales = bizSegments.reduce((s, x) => s + x.value, 0);
 
   return (
-    <div className="space-y-7">
-      {/* Encabezado + filtro */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">
-            {greeting}, {user.name.split(" ")[0]} <span className="ml-1">👋</span>
+    <div className="space-y-4">
+      {/* Encabezado + filtro (compacto, una fila) */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <h1 className="text-lg font-bold leading-tight">
+            {greeting}, {user.name.split(" ")[0]} 👋
           </h1>
-          <p className="text-muted-foreground">
-            Resumen ejecutivo de{" "}
-            <span className="font-medium text-foreground">{scopeLabel}</span>
-            {" · "}
+          <p className="text-xs text-muted-foreground">
+            Resumen ejecutivo · {scopeLabel} ·{" "}
             <span className="font-medium text-foreground">{period.label}</span>
           </p>
         </div>
@@ -127,7 +125,7 @@ export default async function DashboardPage({
       </div>
 
       {/* KPIs principales */}
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Ingresos"
           value={formatMoney(cf.totalIncome)}
@@ -177,7 +175,7 @@ export default async function DashboardPage({
       </div>
 
       {/* KPIs secundarios */}
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {canCosts && pnl && (
           <KpiCard
             label="Utilidad bruta"
@@ -233,15 +231,14 @@ export default async function DashboardPage({
       </div>
 
       {/* Ventas por negocio + tendencia mensual */}
-      <div className="grid gap-5 lg:grid-cols-5">
+      <div className="grid gap-4 lg:grid-cols-5">
         <section className="card-soft lg:col-span-2">
-          <div className="p-5 pb-2">
-            <h2 className="text-base font-semibold">Ventas por negocio</h2>
-            <p className="text-xs text-muted-foreground">En el periodo seleccionado</p>
+          <div className="p-4 pb-1">
+            <h2 className="text-sm font-semibold">Ventas por negocio</h2>
           </div>
-          <div className="flex flex-col items-center gap-5 p-5 pt-1">
+          <div className="flex flex-col items-center gap-3 p-4 pt-1">
             {bizSegments.length === 0 ? (
-              <p className="py-10 text-sm text-muted-foreground">Sin ventas en el periodo.</p>
+              <p className="py-8 text-sm text-muted-foreground">Sin ventas en el periodo.</p>
             ) : (
               <>
                 <DonutChart
@@ -258,44 +255,36 @@ export default async function DashboardPage({
         </section>
 
         <section className="card-soft lg:col-span-3">
-          <div className="flex items-center justify-between p-5 pb-2">
-            <div>
-              <h2 className="text-base font-semibold">Ingresos vs egresos</h2>
-              <p className="text-xs text-muted-foreground">Tendencia mensual (6 meses)</p>
-            </div>
-            <div className="flex gap-4 text-xs">
+          <div className="flex items-center justify-between p-4 pb-1">
+            <h2 className="text-sm font-semibold">Ingresos vs egresos · mensual</h2>
+            <div className="flex gap-3 text-xs">
               <Legend color="#059669" label="Ingresos" />
               <Legend color="#e11d48" label="Egresos" />
             </div>
           </div>
-          <div className="p-5 pt-1">
-            <BarsChart data={monthlyTrend} />
+          <div className="p-4 pt-1">
+            <BarsChart data={monthlyTrend} height={180} />
           </div>
         </section>
       </div>
 
       {/* Tendencia semanal */}
       <section className="card-soft">
-        <div className="flex items-center justify-between p-5 pb-2">
-          <div>
-            <h2 className="text-base font-semibold">Tendencia semanal</h2>
-            <p className="text-xs text-muted-foreground">
-              Ingresos vs egresos, últimas 8 semanas
-            </p>
-          </div>
-          <div className="flex gap-4 text-xs">
+        <div className="flex items-center justify-between p-4 pb-1">
+          <h2 className="text-sm font-semibold">Ingresos vs egresos · semanal (8 sem)</h2>
+          <div className="flex gap-3 text-xs">
             <Legend color="#059669" label="Ingresos" />
             <Legend color="#e11d48" label="Egresos" />
           </div>
         </div>
-        <div className="p-5 pt-1">
-          <BarsChart data={weekly} />
+        <div className="p-4 pt-1">
+          <BarsChart data={weekly} height={180} />
         </div>
       </section>
 
       {/* Resumen por negocio */}
-      <section className="card-soft p-5">
-        <h2 className="mb-3 text-base font-semibold">Resumen por negocio</h2>
+      <section className="card-soft p-4">
+        <h2 className="mb-2 text-sm font-semibold">Resumen por negocio</h2>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
