@@ -1,10 +1,9 @@
-import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { requirePermission, can } from "@/lib/session";
 import { getCurrentBusiness } from "@/lib/business";
 import { getBusiness } from "@/lib/constants";
 import { formatMoney } from "@/lib/format";
-import { resolvePeriod, resolveCustomRange, FINANCE_PERIODS } from "@/lib/period";
+import { resolvePeriod, resolveCustomRange } from "@/lib/period";
 import {
   getCashFlow,
   getTransactions,
@@ -28,8 +27,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PeriodFilter } from "@/components/period-filter";
 import { CashflowTab } from "./_components/cashflow-tab";
 import { DebtsTab } from "./_components/debts-tab";
 import { SuggestionsTab } from "./_components/suggestions-tab";
@@ -213,7 +211,7 @@ export default async function FinanzasPage({
             <span className="font-medium text-foreground">{period.label}</span>
           </p>
         </div>
-        <PeriodFilter active={period.value} from={from} to={to} />
+        <PeriodFilter active={period.value} from={from} to={to} basePath="/finanzas" />
       </div>
 
       {/* KPIs principales */}
@@ -315,80 +313,6 @@ export default async function FinanzasPage({
   );
 }
 
-function PeriodFilter({
-  active,
-  from,
-  to,
-}: {
-  active: string;
-  from?: string;
-  to?: string;
-}) {
-  const isCustom = active === "custom";
-  return (
-    <div className="flex flex-col items-end gap-2">
-      <div className="flex flex-wrap gap-1 rounded-lg border bg-card p-1">
-        {FINANCE_PERIODS.map((p) => {
-          const on = p.value === active;
-          return (
-            <Link
-              key={p.value}
-              href={`/finanzas?period=${p.value}`}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                on
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              {p.label}
-            </Link>
-          );
-        })}
-      </div>
-
-      {/* Rango personalizado: de una fecha a una fecha (form GET, sin JS) */}
-      <form
-        method="get"
-        action="/finanzas"
-        className={`flex flex-wrap items-center gap-1.5 rounded-lg border p-1 ${
-          isCustom ? "border-primary bg-primary/5" : "bg-card"
-        }`}
-      >
-        <span className="pl-1.5 text-xs font-medium text-muted-foreground">Del</span>
-        <Input
-          type="date"
-          name="from"
-          defaultValue={from ?? ""}
-          className="h-8 w-[9.5rem] px-2 text-sm"
-          aria-label="Fecha inicial"
-        />
-        <span className="text-xs font-medium text-muted-foreground">al</span>
-        <Input
-          type="date"
-          name="to"
-          defaultValue={to ?? ""}
-          className="h-8 w-[9.5rem] px-2 text-sm"
-          aria-label="Fecha final"
-        />
-        <Button type="submit" size="sm" className="h-8">
-          Aplicar
-        </Button>
-        {isCustom && (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-8"
-            nativeButton={false}
-            render={<Link href="/finanzas?period=mes" />}
-          >
-            Limpiar
-          </Button>
-        )}
-      </form>
-    </div>
-  );
-}
 
 function SummaryCard({
   label,

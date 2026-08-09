@@ -7,6 +7,7 @@ import {
   products,
   nakamaBlanks,
   financeTransactions,
+  accountEntries,
   debts,
 } from "@/db/schema";
 import type { BusinessScope } from "@/lib/business";
@@ -226,6 +227,50 @@ export async function getWeeklyTrend(
       Number(o.referral) + Number(o.shipping) + Number(txRows[i]?.expense ?? 0);
     return { label: o.wk, income, expense, profit: income - expense };
   });
+}
+
+// Resumen de cuentas MANUALES por cobrar/pagar (saldo pendiente).
+export async function getAccountsSummary(
+  scope: BusinessScope
+): Promise<{ receivable: number; payable: number }> {
+  const bizCond =
+    scope === "all" ? undefined : eq(accountEntries.businessId, scope);
+  const rows = await db
+    .select({
+      kind: accountEntries.kind,
+      outstanding: sql<string>`coalesce(sum(${accountEntries.amount} - ${accountEntries.amountPaid}) filter (where ${accountEntries.status} not in ('saldado','cancelado')), 0)::text`,
+    })
+    .from(accountEntries)
+    .where(bizCond)
+    .groupBy(accountEntries.kind);
+
+  let receivable = 0;
+  let payable = 0;
+  for (const r of rows) {
+    if (r.kind === "cobrar") receivable = Number(r.outstanding);
+    else if (r.kind === "pagar") payable = Number(r.outstanding);
+  }
+  return { receivable, payable };
+}
+
+// COGS por negocio (para "ganancia por negocio" en el dashboard).
+export async function getCogsByBusiness(
+  scope: BusinessScope,
+  range?: DateRange | null
+): Promise<Map<string, number>> {
+  const costExpr = sql`coalesce(${orderItems.unitCost}, ${products.cost}, ${nakamaBlanks.cost}, 0)`;
+  const rows = await db
+    .select({
+      businessId: orders.businessId,
+      cogs: sql<string>`coalesce(sum(${orderItems.quantity} * ${costExpr}), 0)::text`,
+    })
+    .from(orderItems)
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .leftJoin(products, eq(products.id, orderItems.productId))
+    .leftJoin(nakamaBlanks, eq(nakamaBlanks.id, orderItems.blankId))
+    .where(and(eq(orders.status, "entregado"), ordersBiz(scope), whereRange(orders.createdAt, range)))
+    .groupBy(orders.businessId);
+  return new Map(rows.map((r) => [r.businessId, Number(r.cogs)]));
 }
 
 // -------------------------------------------------------------------------
