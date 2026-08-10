@@ -273,6 +273,10 @@ export const orders = pgTable(
     index("idx_orders_seller").on(t.sellerId),
     index("idx_orders_referrer").on(t.referrerId),
     index("idx_orders_customer").on(t.customerId),
+    // Las consultas financieras agregan por estado + rango de fecha (con o sin
+    // negocio). Estos compuestos las mantienen rápidas con miles de pedidos.
+    index("idx_orders_status_created").on(t.status, t.createdAt),
+    index("idx_orders_business_status_created").on(t.businessId, t.status, t.createdAt),
   ]
 );
 
@@ -384,7 +388,13 @@ export const financeTransactions = pgTable(
     date: timestamp("date", { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index("idx_tx_business").on(t.businessId), index("idx_tx_date").on(t.date)]
+  (t) => [
+    index("idx_tx_business").on(t.businessId),
+    index("idx_tx_date").on(t.date),
+    // Los agregados de caja filtran por tipo + fecha (con o sin negocio).
+    index("idx_tx_type_date").on(t.type, t.date),
+    index("idx_tx_business_type_date").on(t.businessId, t.type, t.date),
+  ]
 );
 
 // Compras / recompras de inventario (productos de Supplements/Peptides).

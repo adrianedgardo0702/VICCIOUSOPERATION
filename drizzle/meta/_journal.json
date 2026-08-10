@@ -120,6 +120,13 @@
       "when": 1786318440623,
       "tag": "0016_thin_captain_midlands",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786401255453,
+      "tag": "0017_military_pyro",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,10 @@
-import { and, eq, sql, type Column } from "drizzle-orm";
+import { cache } from "react";
+import { eq, sql, type Column } from "drizzle-orm";
 import { db } from "@/db";
-import { orders, accountEntries, financialGoals } from "@/db/schema";
+import { orders, accountEntries } from "@/db/schema";
 import type { BusinessScope } from "@/lib/business";
 import { getCreditCards } from "@/lib/queries/cards";
+import { getFinancialGoals } from "@/lib/queries/goals";
 import {
   getCashProjection,
   getCashPosition,
@@ -15,15 +17,20 @@ function biz(col: Column, scope: BusinessScope) {
   return scope === "all" ? undefined : eq(col, scope);
 }
 
-export async function getCfoAlerts(scope: BusinessScope): Promise<CfoAlert[]> {
+// cache(): una vez por request. Las sub-consultas (tarjetas, proyección, caja,
+// recurrentes, metas) también están cacheadas, así que compartirlas con la
+// página que llama no repite trabajo contra el pooler.
+export const getCfoAlerts = cache(async (scope: BusinessScope): Promise<CfoAlert[]> => {
   const nowIso = new Date().toISOString();
 
-  const [cards, projection, cashPosition, recurringMonthly] = await Promise.all([
-    getCreditCards(scope),
-    getCashProjection(scope),
-    getCashPosition(scope),
-    getRecurringMonthlyTotal(scope),
-  ]);
+  const [cards, projection, cashPosition, recurringMonthly, goals] =
+    await Promise.all([
+      getCreditCards(scope),
+      getCashProjection(scope),
+      getCashPosition(scope),
+      getRecurringMonthlyTotal(scope),
+      getFinancialGoals(scope),
+    ]);
 
   // Cobros vencidos: pedidos a crédito + cuentas por cobrar manuales.
   const [ordersOverdue] = await db
@@ -45,14 +52,10 @@ export async function getCfoAlerts(scope: BusinessScope): Promise<CfoAlert[]> {
     Number(ordersOverdue?.v ?? 0) + Number(entriesOverdue?.recv ?? 0);
   const payablesOverdue = Number(entriesOverdue?.pay ?? 0);
 
-  // Metas activas con fecha vencida.
-  const goalsRows = await db
-    .select({ name: financialGoals.name, dueDate: financialGoals.dueDate, status: financialGoals.status })
-    .from(financialGoals)
-    .where(and(biz(financialGoals.businessId, scope), eq(financialGoals.status, "activa")));
+  // Metas activas con fecha vencida (reutiliza la consulta cacheada de metas).
   const now = new Date();
-  const goalsOverdue = goalsRows
-    .filter((g) => g.dueDate && g.dueDate < now)
+  const goalsOverdue = goals
+    .filter((g) => g.status === "activa" && g.dueDate && g.dueDate < now)
     .map((g) => g.name);
 
   return buildCfoAlerts({
@@ -72,4 +75,4 @@ export async function getCfoAlerts(scope: BusinessScope): Promise<CfoAlert[]> {
     payablesOverdue,
     goalsOverdue,
   });
-}
+});

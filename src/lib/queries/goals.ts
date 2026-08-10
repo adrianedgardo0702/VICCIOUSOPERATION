@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { desc, eq, type Column } from "drizzle-orm";
 import { db } from "@/db";
 import { financialGoals } from "@/db/schema";
@@ -21,7 +22,9 @@ export type GoalView = {
   notes: string | null;
 };
 
-export async function getFinancialGoals(scope: BusinessScope): Promise<GoalView[]> {
+// cache(): el dashboard la pide para el widget de metas y otra vez dentro de
+// las alertas CFO; una sola consulta por request.
+export const getFinancialGoals = cache(async (scope: BusinessScope): Promise<GoalView[]> => {
   const rows = await db
     .select()
     .from(financialGoals)
@@ -45,4 +48,4 @@ export async function getFinancialGoals(scope: BusinessScope): Promise<GoalView[
       notes: r.notes,
     };
   });
-}
+});

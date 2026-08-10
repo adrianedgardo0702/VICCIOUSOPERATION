@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -62,14 +63,18 @@ function toView(r: CreditCard): CreditCardView {
   };
 }
 
-export async function getCreditCards(scope: BusinessScope): Promise<CreditCardView[]> {
-  const rows = await db
-    .select()
-    .from(creditCards)
-    .where(cardBiz(scope))
-    .orderBy(desc(creditCards.balance));
-  return rows.map(toView);
-}
+// cache(): en /finanzas se pide dos veces por render (grid de tarjetas +
+// alertas CFO); con esto la consulta corre una sola vez por request.
+export const getCreditCards = cache(
+  async (scope: BusinessScope): Promise<CreditCardView[]> => {
+    const rows = await db
+      .select()
+      .from(creditCards)
+      .where(cardBiz(scope))
+      .orderBy(desc(creditCards.balance));
+    return rows.map(toView);
+  }
+);
 
 export async function getCreditCard(id: string): Promise<CreditCardView | null> {
   const row = await db.query.creditCards.findFirst({ where: eq(creditCards.id, id) });
