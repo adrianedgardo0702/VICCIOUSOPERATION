@@ -71,9 +71,12 @@ export async function getCashFlow(
     .where(ordersBiz(scope));
 
   // Abonos de pedidos a crédito cobrados en el periodo (por fecha de cobro).
+  // Se exige is_credit = true: si otra app del ecosistema cambiara el flag
+  // directo en la BD, el total del pedido ya cuenta como contado y sumar
+  // también sus abonos duplicaría el ingreso.
   const [payAgg] = await db
     .select({
-      collected: sql<string>`coalesce(sum(${orderPayments.amount}) filter (where true${inRange(orderPayments.paidAt, range)}), 0)::text`,
+      collected: sql<string>`coalesce(sum(${orderPayments.amount}) filter (where ${orders.isCredit} = true${inRange(orderPayments.paidAt, range)}), 0)::text`,
     })
     .from(orderPayments)
     .innerJoin(orders, eq(orders.id, orderPayments.orderId))
@@ -554,10 +557,12 @@ export async function getPerBusinessPL(
     .groupBy(orders.businessId);
 
   // Abonos de crédito cobrados por negocio en el periodo (se suman a ventas).
+  // is_credit = true por la misma razón que en getCashFlow: evitar duplicar
+  // si el flag cambia por fuera de esta app.
   const payRows = await db
     .select({
       businessId: orders.businessId,
-      collected: sql<string>`coalesce(sum(${orderPayments.amount}) filter (where true${inRange(orderPayments.paidAt, range)}), 0)::text`,
+      collected: sql<string>`coalesce(sum(${orderPayments.amount}) filter (where ${orders.isCredit} = true${inRange(orderPayments.paidAt, range)}), 0)::text`,
     })
     .from(orderPayments)
     .innerJoin(orders, eq(orders.id, orderPayments.orderId))

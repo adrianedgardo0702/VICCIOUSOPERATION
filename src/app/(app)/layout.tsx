@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/session";
 import { getCurrentBusiness } from "@/lib/business";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { UserMenu } from "@/components/user-menu";
 import { BusinessSwitcher } from "@/components/business-switcher";
@@ -17,6 +18,9 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-screen bg-background">
+      {/* Datos en vivo: re-consulta Supabase periódicamente y al volver a la pestaña */}
+      <AutoRefresh />
+
       {/* Sidebar comando */}
       <aside className="hidden w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground md:flex">
         <div className="flex h-16 items-center gap-3 px-6">

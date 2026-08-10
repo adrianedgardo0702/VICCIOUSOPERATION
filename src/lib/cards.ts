@@ -130,30 +130,36 @@ function monthLabel(d: Date): string {
     .replace(".", "");
 }
 
+// "Ahora" desplazado a hora de Panamá (UTC-5): leerlo con getUTC* equivale al
+// reloj de pared de Panamá sin depender de la zona horaria del servidor
+// (Vercel corre en UTC; sin esto, "pago hoy" se corría 5 horas).
+function panShiftedNow(): Date {
+  return new Date(Date.now() - 5 * 3600 * 1000);
+}
+
 // Próxima ocurrencia de un día del mes (p. ej. fecha de pago) desde hoy.
-export function nextDayOfMonth(day: number | null, from: Date = new Date()): Date | null {
+export function nextDayOfMonth(day: number | null, from: Date = panShiftedNow()): Date | null {
   if (!day || day < 1 || day > 31) return null;
-  const y = from.getFullYear();
-  const m = from.getMonth();
-  let next = new Date(y, m, Math.min(day, daysInMonth(y, m)));
-  if (next < startOfDay(from)) {
-    const nm = m + 1;
-    next = new Date(y, nm, Math.min(day, daysInMonth(y, nm)));
+  const y = from.getUTCFullYear();
+  const m = from.getUTCMonth();
+  const today = Date.UTC(y, m, from.getUTCDate());
+  let next = Date.UTC(y, m, Math.min(day, daysInMonth(y, m)));
+  if (next < today) {
+    next = Date.UTC(y, m + 1, Math.min(day, daysInMonth(y, m + 1)));
   }
-  return next;
+  return new Date(next);
 }
 
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
+// Días del mes (m con overflow válido), en base UTC.
 function daysInMonth(y: number, m: number): number {
-  return new Date(y, m + 1, 0).getDate();
+  return new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
 }
 
-// Días hasta una fecha (negativo = ya venció).
-export function daysUntil(d: Date | null, from: Date = new Date()): number | null {
+// Días hasta una fecha (negativo = ya venció). Compara días calendario de
+// Panamá usando los getters UTC de fechas ya desplazadas.
+export function daysUntil(d: Date | null, from: Date = panShiftedNow()): number | null {
   if (!d) return null;
-  const ms = startOfDay(d).getTime() - startOfDay(from).getTime();
-  return Math.round(ms / (24 * 3600 * 1000));
+  const a = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const b = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate());
+  return Math.round((a - b) / (24 * 3600 * 1000));
 }
