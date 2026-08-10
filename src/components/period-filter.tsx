@@ -72,7 +72,7 @@ export function PeriodFilter({
             variant="ghost"
             className="h-8"
             nativeButton={false}
-            render={<Link href={`${basePath}?period=3m`} />}
+            render={<Link href={`${basePath}?period=mes`} />}
           >
             Limpiar
           </Button>

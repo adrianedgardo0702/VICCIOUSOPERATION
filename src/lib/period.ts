@@ -12,7 +12,7 @@ export type ResolvedPeriod = {
 
 export const FINANCE_PERIODS = [
   { value: "hoy", label: "Hoy" },
-  { value: "3m", label: "Últimos 3 meses" },
+  { value: "mes", label: "Este mes" },
   { value: "anio", label: "Este año" },
   { value: "todo", label: "Histórico" },
 ] as const;
@@ -89,12 +89,12 @@ export function resolveCustomRange(from?: string, to?: string): ResolvedPeriod |
 }
 
 export function resolvePeriod(value?: string): ResolvedPeriod {
-  const v = isFinancePeriod(value) ? (value as string) : "3m";
+  const v = isFinancePeriod(value) ? (value as string) : "mes";
   const now = panNow();
   const y = now.getUTCFullYear();
   const m = now.getUTCMonth();
 
-  const label = FINANCE_PERIODS.find((p) => p.value === v)?.label ?? "Últimos 3 meses";
+  const label = FINANCE_PERIODS.find((p) => p.value === v)?.label ?? "Este mes";
 
   // Medianoche de Panamá del día actual desplazada `offsetDays`.
   const dayStart = (offsetDays: number) =>
@@ -108,12 +108,12 @@ export function resolvePeriod(value?: string): ResolvedPeriod {
         range: { start: dayStart(0), end: dayStart(1) },
         prev: { start: dayStart(-1), end: dayStart(0) },
       };
-    case "3m":
+    case "mes":
       return {
         value: v,
         label,
-        range: { start: monthStart(y, m - 2), end: monthStart(y, m + 1) },
-        prev: { start: monthStart(y, m - 5), end: monthStart(y, m - 2) },
+        range: { start: monthStart(y, m), end: monthStart(y, m + 1) },
+        prev: { start: monthStart(y, m - 1), end: monthStart(y, m) },
       };
     case "anio":
       return {
