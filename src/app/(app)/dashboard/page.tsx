@@ -27,6 +27,8 @@ import {
 } from "@/lib/queries/finance";
 import { getFinanceDashboard, deltaPct } from "@/lib/queries/dashboard";
 import { getFinancialGoals } from "@/lib/queries/goals";
+import { getCfoAlerts } from "@/lib/queries/cfo";
+import { CfoAlertsBanner } from "./_components/cfo-alerts";
 import { PeriodFilter } from "@/components/period-filter";
 import { BarsChart } from "@/components/charts/bars-chart";
 import { DonutChart, DonutLegend } from "@/components/charts/donut-chart";
@@ -74,7 +76,7 @@ export default async function DashboardPage({
     );
   }
 
-  const [cf, prevCf, pl, weekly, dash, accounts, pnl, prevPnl, cogsMap, goals] =
+  const [cf, prevCf, pl, weekly, dash, accounts, pnl, prevPnl, cogsMap, goals, cfoAlerts] =
     await Promise.all([
       getCashFlow(scope, period.range),
       period.prev ? getCashFlow(scope, period.prev) : Promise.resolve(null),
@@ -88,6 +90,7 @@ export default async function DashboardPage({
         : Promise.resolve(null),
       canCosts ? getCogsByBusiness(scope, period.range) : Promise.resolve(null),
       getFinancialGoals(scope),
+      getCfoAlerts(scope),
     ]);
 
   const activeGoals = goals.filter((g) => g.status !== "pausada").slice(0, 3);
@@ -129,6 +132,9 @@ export default async function DashboardPage({
         </div>
         <PeriodFilter active={period.value} from={from} to={to} basePath="/dashboard" />
       </div>
+
+      {/* Alertas CFO (críticas/advertencias) */}
+      <CfoAlertsBanner alerts={cfoAlerts} />
 
       {/* KPIs principales */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

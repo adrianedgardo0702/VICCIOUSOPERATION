@@ -1,9 +1,12 @@
 import { requirePermission, can } from "@/lib/session";
+import { getCurrentBusiness } from "@/lib/business";
 import { getBusiness, BUSINESS_IDS } from "@/lib/constants";
 import { formatMoney } from "@/lib/format";
-import { resolvePeriod, resolveCustomRange } from "@/lib/period";
+import { resolvePeriod, resolveCustomRange, type DateRange } from "@/lib/period";
 import { getProfitAndLoss, type ProfitAndLoss } from "@/lib/queries/finance";
+import { getMonthlyClosures, getClosureFor } from "@/lib/queries/closures";
 import { PeriodFilter } from "@/components/period-filter";
+import { ClosureSection } from "./_components/closure-section";
 import {
   Table,
   TableBody,
@@ -13,20 +16,44 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+function currentMonthKey(): string {
+  const now = new Date(Date.now() - 5 * 3600 * 1000); // Panamá UTC-5
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthRange(monthKey: string): DateRange {
+  const [y, mo] = monthKey.split("-").map(Number);
+  return {
+    start: new Date(Date.UTC(y, mo - 1, 1, 5)),
+    end: new Date(Date.UTC(y, mo, 1, 5)),
+  };
+}
+
 export default async function ReportesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ period?: string; from?: string; to?: string; cm?: string }>;
 }) {
   const user = await requirePermission("finance.view");
   const canCosts = can(user, "finance.costs");
-  const { period: periodParam, from, to } = await searchParams;
+  const canManage = can(user, "finance.manage");
+  const scope = await getCurrentBusiness();
+  const { period: periodParam, from, to, cm } = await searchParams;
   const period = resolveCustomRange(from, to) ?? resolvePeriod(periodParam);
+
+  const closeMonthKey = cm && /^\d{4}-\d{2}$/.test(cm) ? cm : currentMonthKey();
 
   // Un reporte por negocio + consolidado, para el periodo elegido.
   const [total, ...perBiz] = await Promise.all([
     getProfitAndLoss("all", period.range),
     ...BUSINESS_IDS.map((id) => getProfitAndLoss(id, period.range)),
+  ]);
+
+  // Cierre mensual: preview del mes elegido + estado + historial.
+  const [monthPreview, closure, closures] = await Promise.all([
+    getProfitAndLoss(scope, monthRange(closeMonthKey)),
+    getClosureFor(scope, closeMonthKey),
+    getMonthlyClosures(scope),
   ]);
 
   const rows = BUSINESS_IDS.map((id, i) => ({
@@ -93,6 +120,24 @@ export default async function ReportesPage({
           No hay ventas en el periodo seleccionado.
         </p>
       )}
+
+      <ClosureSection
+        monthKey={closeMonthKey}
+        canManage={canManage}
+        canCosts={canCosts}
+        preview={{
+          income: monthPreview.income,
+          cogs: monthPreview.cogs,
+          opex: monthPreview.opex + monthPreview.referral + monthPreview.shipping,
+          netProfit: monthPreview.netProfit,
+        }}
+        closed={
+          closure
+            ? { ...closure, closedAt: closure.closedAt.toISOString() }
+            : null
+        }
+        closures={closures.map((c) => ({ ...c, closedAt: c.closedAt.toISOString() }))}
+      />
     </div>
   );
 }

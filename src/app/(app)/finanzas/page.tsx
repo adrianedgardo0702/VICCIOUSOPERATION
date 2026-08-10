@@ -18,6 +18,8 @@ import {
   getTopByProfit,
 } from "@/lib/queries/finance";
 import { getCreditCards } from "@/lib/queries/cards";
+import { getCfoAlerts } from "@/lib/queries/cfo";
+import { cfoAlertToSuggestion } from "@/lib/cfo";
 import { getFinanceDashboard, deltaPct } from "@/lib/queries/dashboard";
 import { computePayoff, generateSuggestions } from "@/lib/finance";
 import {
@@ -78,6 +80,7 @@ export default async function FinanzasPage({
     lowStockCount,
     pnl,
     topByProfit,
+    cfoAlerts,
   ] = await Promise.all([
     getFinanceDashboard(scope),
     getCashFlow(scope, period.range),
@@ -93,6 +96,7 @@ export default async function FinanzasPage({
     getLowStockCount(),
     canCosts ? getProfitAndLoss(scope, period.range) : Promise.resolve(null),
     canCosts ? getTopByProfit(scope, period.range, 5) : Promise.resolve(null),
+    getCfoAlerts(scope),
   ]);
 
   const trend = dash.salesTrend.map((p, i) => ({
@@ -190,7 +194,7 @@ export default async function FinanzasPage({
     { name: "", annualRate: 0 } as { name: string; annualRate: number }
   );
 
-  const suggestions = generateSuggestions({
+  const baseSuggestions = generateSuggestions({
     income: cashFlow.totalIncome,
     expense: cashFlow.totalExpense,
     balance: cashFlow.balance,
@@ -204,6 +208,11 @@ export default async function FinanzasPage({
     lowStockCount,
     assumedShipping: cashFlow.shippingExpense,
   });
+
+  // Alertas CFO (tarjetas, caja, cuentas, metas) primero; luego sugerencias de
+  // deudas/inventario. Se omite el placeholder "sin alertas" si hay reales.
+  const realCfo = cfoAlerts.filter((a) => a.level !== "good");
+  const suggestions = [...realCfo.map(cfoAlertToSuggestion), ...baseSuggestions];
 
   const netMargin =
     cashFlow.totalIncome > 0 ? (cashFlow.balance / cashFlow.totalIncome) * 100 : null;
@@ -267,7 +276,7 @@ export default async function FinanzasPage({
           <TabsTrigger value="cashflow">Movimientos</TabsTrigger>
           <TabsTrigger value="debts">Deudas</TabsTrigger>
           <TabsTrigger value="suggestions">
-            Sugerencias{suggestions.length ? ` (${suggestions.length})` : ""}
+            Alertas CFO{suggestions.length ? ` (${suggestions.length})` : ""}
           </TabsTrigger>
         </TabsList>
 
