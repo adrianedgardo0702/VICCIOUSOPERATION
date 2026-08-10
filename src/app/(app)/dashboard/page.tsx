@@ -9,7 +9,9 @@ import {
   CreditCard,
   Percent,
   PiggyBank,
+  Trophy,
 } from "lucide-react";
+import Link from "next/link";
 import { requireUser, can } from "@/lib/session";
 import { getCurrentBusiness } from "@/lib/business";
 import { getBusiness } from "@/lib/constants";
@@ -24,6 +26,7 @@ import {
   getCogsByBusiness,
 } from "@/lib/queries/finance";
 import { getFinanceDashboard, deltaPct } from "@/lib/queries/dashboard";
+import { getFinancialGoals } from "@/lib/queries/goals";
 import { PeriodFilter } from "@/components/period-filter";
 import { BarsChart } from "@/components/charts/bars-chart";
 import { DonutChart, DonutLegend } from "@/components/charts/donut-chart";
@@ -71,7 +74,7 @@ export default async function DashboardPage({
     );
   }
 
-  const [cf, prevCf, pl, weekly, dash, accounts, pnl, prevPnl, cogsMap] =
+  const [cf, prevCf, pl, weekly, dash, accounts, pnl, prevPnl, cogsMap, goals] =
     await Promise.all([
       getCashFlow(scope, period.range),
       period.prev ? getCashFlow(scope, period.prev) : Promise.resolve(null),
@@ -84,7 +87,10 @@ export default async function DashboardPage({
         ? getProfitAndLoss(scope, period.prev)
         : Promise.resolve(null),
       canCosts ? getCogsByBusiness(scope, period.range) : Promise.resolve(null),
+      getFinancialGoals(scope),
     ]);
+
+  const activeGoals = goals.filter((g) => g.status !== "pausada").slice(0, 3);
 
   const receivables = cf.receivables + accounts.receivable;
   const payables = accounts.payable;
@@ -348,6 +354,45 @@ export default async function DashboardPage({
           </p>
         )}
       </section>
+
+      {/* Metas financieras (compacto, solo si hay) */}
+      {activeGoals.length > 0 && (
+        <section className="card-soft p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <Trophy className="h-4 w-4 text-primary" />
+              Metas financieras
+            </h2>
+            <Link href="/metas" className="text-xs font-medium text-primary hover:underline">
+              Ver todas →
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {activeGoals.map((g) => {
+              const color = g.color || (g.status === "lograda" ? "#059669" : "#7c3aed");
+              return (
+                <div key={g.id}>
+                  <div className="mb-1 flex items-baseline justify-between text-sm">
+                    <span className="truncate font-medium">{g.name}</span>
+                    <span className="text-xs font-medium" style={{ color }}>
+                      {g.pct.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <span
+                      className="block h-full rounded-full"
+                      style={{ width: `${g.pct}%`, backgroundColor: color }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground tabular-nums">
+                    {formatMoney(g.currentAmount)} / {formatMoney(g.targetAmount)}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
