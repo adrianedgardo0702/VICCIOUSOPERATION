@@ -23,8 +23,12 @@ const globalForDb = globalThis as unknown as {
 //   función se cuelga hasta el límite de 300s de Vercel. Con varias conexiones
 //   cada consulta concurrente usa la suya y no colisionan. El pooler de
 //   transacciones está hecho para muchas conexiones cortas, así que es seguro.
-// - `idle_timeout` cierra conexiones ociosas; `connect_timeout` hace fallar
-//   rápido si el pooler está saturado (en vez de colgar y retener conexiones).
+// - `idle_timeout` cierra conexiones ociosas; `connect_timeout` (10s) hace
+//   fallar rápido si el pooler está SATURADO por otra app (en vez de colgar y
+//   retener conexiones): la petición devuelve error en ~10s en lugar de
+//   congelarse. El tope de statement lo pone Supabase (2min) + el timeout de
+//   la función de Vercel; NO se puede bajar por `options` porque el pooler de
+//   transacciones (Supavisor) ignora ese parámetro de arranque.
 // - Reusar el cliente entre invocaciones tibias de la MISMA instancia evita
 //   abrir un pool nuevo por request.
 const client =

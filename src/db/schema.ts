@@ -277,6 +277,8 @@ export const orders = pgTable(
     // negocio). Estos compuestos las mantienen rápidas con miles de pedidos.
     index("idx_orders_status_created").on(t.status, t.createdAt),
     index("idx_orders_business_status_created").on(t.businessId, t.status, t.createdAt),
+    // Para el "pulso" de cambios (max(updated_at) en /api/finance-pulse).
+    index("idx_orders_updated").on(t.updatedAt),
   ]
 );
 

@@ -3,48 +3,80 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-// Mantiene la app sincronizada con Supabase sin recargar a mano: como todas
-// las páginas son server components dinámicos, router.refresh() vuelve a
-// consultar la BD y pinta los datos nuevos (los de esta app o los que escriba
-// cualquier otra app del ecosistema: tienda, app de vendedor, etc.).
+// Sincroniza Finanzas con Supabase en (casi) tiempo real SIN congelar:
 //
-// OJO con el pooler compartido de Supabase: cada refresh dispara TODAS las
-// consultas de la página. Por eso este componente FRENA en vez de reaccionar
-// a todo:
-// - `minGapMs` garantiza un espacio mínimo entre refrescos. Al volver a la
-//   pestaña, el navegador dispara `focus` Y `visibilitychange` casi juntos;
-//   sin este freno eran dos renders completos seguidos (doble avalancha de
-//   queries justo cuando la otra app está escribiendo → congelamiento).
-// - Solo refresca con la pestaña visible: nada de consultas de fondo.
+// En vez de re-consultar todo el dashboard cada minuto (lo que saturaba el
+// pooler compartido cuando otra app escribía), consulta un "pulso" barato
+// (/api/finance-pulse = un solo número). Solo cuando ese número CAMBIA —es
+// decir, cuando hubo una venta, un movimiento de caja o un abono nuevo—
+// dispara un refresh real de los server components (router.refresh()).
+//
+// Resultado:
+// - Casi nada de carga a la BD cuando no pasa nada (1 consulta indexada / 8s).
+// - Datos nuevos aparecen solos en ~8s, sin recargar a mano.
+// - Reacciona ÚNICAMENTE a cambios financieros, no a cualquier cambio general.
+// - Nunca hay dos refrescos encimados (guard `inFlight` + `minGapMs`).
 export function AutoRefresh({
-  intervalMs = 60_000,
-  minGapMs = 20_000,
+  pollMs = 8_000,
+  minGapMs = 6_000,
 }: {
-  intervalMs?: number;
+  pollMs?: number;
   minGapMs?: number;
 }) {
   const router = useRouter();
+  const version = useRef<string | null>(null);
   const lastRefresh = useRef(0);
+  const inFlight = useRef(false);
 
   useEffect(() => {
-    const refresh = () => {
+    let cancelled = false;
+
+    const check = async () => {
       if (document.visibilityState !== "visible") return;
-      const now = Date.now();
-      if (now - lastRefresh.current < minGapMs) return;
-      lastRefresh.current = now;
-      router.refresh();
+      if (inFlight.current) return;
+      inFlight.current = true;
+      try {
+        const res = await fetch("/api/finance-pulse", { cache: "no-store" });
+        if (!res.ok) return;
+        const { v } = (await res.json()) as { v: string | null };
+        if (cancelled || v == null) return;
+
+        // Primer valor: fija la línea base, no refresca.
+        if (version.current === null) {
+          version.current = v;
+          return;
+        }
+        // Cambió algo financiero → refrescar (con espacio mínimo entre refrescos).
+        if (v !== version.current) {
+          version.current = v;
+          const now = Date.now();
+          if (now - lastRefresh.current >= minGapMs) {
+            lastRefresh.current = now;
+            router.refresh();
+          }
+        }
+      } catch {
+        // Red intermitente / pooler ocupado: se reintenta en el próximo tick.
+      } finally {
+        inFlight.current = false;
+      }
     };
 
-    const id = setInterval(refresh, intervalMs);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
+    const id = setInterval(check, pollMs);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    check(); // línea base inmediata
 
     return () => {
+      cancelled = true;
       clearInterval(id);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [router, intervalMs, minGapMs]);
+  }, [router, pollMs, minGapMs]);
 
   return null;
 }
