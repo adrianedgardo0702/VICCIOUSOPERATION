@@ -29,20 +29,29 @@ export const revalidate = 0;
 // Supabase— sin re-consultar todo el dashboard sin necesidad.
 export async function GET() {
   try {
-    const rows = (await db.execute(sql`
-      select coalesce(extract(epoch from greatest(
-        coalesce((select max(updated_at) from orders), 'epoch'::timestamptz),
-        coalesce((select max(date) from finance_transactions), 'epoch'::timestamptz),
-        coalesce((select max(paid_at) from order_payments), 'epoch'::timestamptz),
-        coalesce((select max(updated_at) from products), 'epoch'::timestamptz),
-        coalesce((select max(updated_at) from credit_cards), 'epoch'::timestamptz),
-        coalesce((select max(created_at) from credit_card_movements), 'epoch'::timestamptz),
-        coalesce((select max(updated_at) from bank_accounts), 'epoch'::timestamptz),
-        coalesce((select max(updated_at) from recurring_expenses), 'epoch'::timestamptz),
-        coalesce((select max(updated_at) from financial_goals), 'epoch'::timestamptz),
-        coalesce((select max(closed_at) from monthly_closures), 'epoch'::timestamptz)
-      )), 0)::bigint as v
-    `)) as unknown as { v: string }[];
+    // Blindaje: corre dentro de una transacción con `SET LOCAL statement_timeout`.
+    // A diferencia del parámetro de arranque (que Supavisor ignora), `SET LOCAL`
+    // dentro de una transacción SÍ lo respeta el pooler de transacciones, porque
+    // la transacción queda fijada a un backend. Así este endpoint —que corre cada
+    // 8s en cada usuario— jamás puede retener una conexión colgada aunque no se
+    // haya fijado el timeout global a nivel de rol.
+    const rows = (await db.transaction(async (tx) => {
+      await tx.execute(sql`set local statement_timeout = 5000`);
+      return await tx.execute(sql`
+        select coalesce(extract(epoch from greatest(
+          coalesce((select max(updated_at) from orders), 'epoch'::timestamptz),
+          coalesce((select max(date) from finance_transactions), 'epoch'::timestamptz),
+          coalesce((select max(paid_at) from order_payments), 'epoch'::timestamptz),
+          coalesce((select max(updated_at) from products), 'epoch'::timestamptz),
+          coalesce((select max(updated_at) from credit_cards), 'epoch'::timestamptz),
+          coalesce((select max(created_at) from credit_card_movements), 'epoch'::timestamptz),
+          coalesce((select max(updated_at) from bank_accounts), 'epoch'::timestamptz),
+          coalesce((select max(updated_at) from recurring_expenses), 'epoch'::timestamptz),
+          coalesce((select max(updated_at) from financial_goals), 'epoch'::timestamptz),
+          coalesce((select max(closed_at) from monthly_closures), 'epoch'::timestamptz)
+        )), 0)::bigint as v
+      `);
+    })) as unknown as { v: string }[];
 
     return NextResponse.json(
       { v: String(rows[0]?.v ?? "0") },
