@@ -109,6 +109,9 @@ export const products = pgTable(
   },
   (t) => [
     index("idx_products_business").on(t.businessId),
+    // Para el "pulso" de cambios (detección barata de inserciones/edición
+    // manual o desde otra app) con miles de productos.
+    index("idx_products_updated").on(t.updatedAt),
     uniqueIndex("uq_products_business_sku")
       .on(t.businessId, t.sku)
       .where(sql`${t.sku} is not null`),

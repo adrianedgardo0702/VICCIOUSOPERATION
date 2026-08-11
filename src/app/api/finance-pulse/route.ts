@@ -6,22 +6,41 @@ import { db } from "@/db";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// Señal de cambio SOLO de las tablas que mueven dinero: pedidos (ventas y
-// cambios de estado → updated_at), movimientos de caja (date) y abonos
-// (paid_at). Devuelve un único número (epoch del cambio más reciente).
+// Señal de cambio de TODA la información financiera que muestra la app, venga
+// de la propia app, de una carga manual en Supabase o de otra app del
+// ecosistema. Devuelve un único número: el epoch del cambio más reciente entre
+// todas las tablas financieras. Cubre:
+//   - orders (ventas y cambios de estado → updated_at)
+//   - finance_transactions (movimientos de caja → date)
+//   - order_payments (abonos → paid_at)
+//   - products (inventario/costos → updated_at)
+//   - credit_cards + credit_card_movements (tarjetas)
+//   - bank_accounts (tesorería)
+//   - recurring_expenses (gastos recurrentes)
+//   - financial_goals (metas)
+//   - monthly_closures (cierres)
 //
-// Es una consulta baratísima: cada max() usa el índice de esa columna
-// (index scan hacia atrás, O(log n)), así que aguanta miles/millones de filas.
+// Sigue siendo baratísimo: las tablas grandes (orders, products,
+// finance_transactions, order_payments) tienen índice en la columna de fecha,
+// así que cada max() es un index scan hacia atrás O(log n) —aguanta millones de
+// filas—; las tablas de configuración (tarjetas, cuentas, metas…) son pequeñas.
 // El cliente compara este número; solo si cambió pide un refresh real. Así
-// Finanzas reacciona ÚNICAMENTE a datos financieros nuevos —no a cualquier
-// cambio del Supabase— y no re-consulta todo el dashboard sin necesidad.
+// Finanzas reacciona a datos financieros nuevos —no a cualquier cambio del
+// Supabase— sin re-consultar todo el dashboard sin necesidad.
 export async function GET() {
   try {
     const rows = (await db.execute(sql`
       select coalesce(extract(epoch from greatest(
         coalesce((select max(updated_at) from orders), 'epoch'::timestamptz),
         coalesce((select max(date) from finance_transactions), 'epoch'::timestamptz),
-        coalesce((select max(paid_at) from order_payments), 'epoch'::timestamptz)
+        coalesce((select max(paid_at) from order_payments), 'epoch'::timestamptz),
+        coalesce((select max(updated_at) from products), 'epoch'::timestamptz),
+        coalesce((select max(updated_at) from credit_cards), 'epoch'::timestamptz),
+        coalesce((select max(created_at) from credit_card_movements), 'epoch'::timestamptz),
+        coalesce((select max(updated_at) from bank_accounts), 'epoch'::timestamptz),
+        coalesce((select max(updated_at) from recurring_expenses), 'epoch'::timestamptz),
+        coalesce((select max(updated_at) from financial_goals), 'epoch'::timestamptz),
+        coalesce((select max(closed_at) from monthly_closures), 'epoch'::timestamptz)
       )), 0)::bigint as v
     `)) as unknown as { v: string }[];
 

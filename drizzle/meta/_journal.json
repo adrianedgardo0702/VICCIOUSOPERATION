@@ -134,6 +134,13 @@
       "when": 1786405333492,
       "tag": "0018_quiet_rawhide_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786412254300,
+      "tag": "0019_cloudy_scrambler",
+      "breakpoints": true
     }
   ]
 }

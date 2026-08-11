@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Sora, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
+import { ServiceWorkerKiller } from "@/components/sw-killer";
 import "./globals.css";
 
 // Cuerpo / UI: Inter (excelentes numerales tabulares para tablas de datos).
@@ -37,6 +38,7 @@ export default function RootLayout({
       className={`${inter.variable} ${sora.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <ServiceWorkerKiller />
         {children}
         <Toaster richColors position="top-right" />
       </body>
