@@ -7,5 +7,5 @@ export default proxy;
 
 export const config = {
   // Protege todas las rutas excepto assets estáticos y la API de auth.
-  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.png$).*)"],
+  matcher: ["/((?!api/auth|api/health|_next/static|_next/image|favicon.ico|.*\\.png$).*)"],
 };

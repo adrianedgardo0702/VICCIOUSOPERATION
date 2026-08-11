@@ -31,7 +31,10 @@ const extraPermissionsFor = cache(async (userId: string): Promise<Permission[]> 
 
 // Obtiene el usuario actual o null.
 export async function getCurrentUser(): Promise<SessionUser | null> {
-  const session = await auth();
+  // Si auth() lanza (p. ej. AUTH_SECRET ausente/incorrecto o un JWT ilegible),
+  // tratamos como sesión inválida en vez de dejar reventar el layout con la
+  // pantalla genérica "server error". El usuario irá a /login.
+  const session = await auth().catch(() => null);
   if (!session?.user) return null;
   const permissions = await extraPermissionsFor(session.user.id);
   return {
