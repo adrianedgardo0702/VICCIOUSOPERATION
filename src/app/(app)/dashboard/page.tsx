@@ -28,6 +28,7 @@ import {
 import { getFinanceDashboard, deltaPct } from "@/lib/queries/dashboard";
 import { getFinancialGoals } from "@/lib/queries/goals";
 import { getCfoAlerts } from "@/lib/queries/cfo";
+import { withTimeout } from "@/lib/with-timeout";
 import { CfoAlertsBanner } from "./_components/cfo-alerts";
 import { PeriodFilter } from "@/components/period-filter";
 import { BarsChart } from "@/components/charts/bars-chart";
@@ -77,21 +78,25 @@ export default async function DashboardPage({
   }
 
   const [cf, prevCf, pl, weekly, dash, accounts, pnl, prevPnl, cogsMap, goals, cfoAlerts] =
-    await Promise.all([
-      getCashFlow(scope, period.range),
-      period.prev ? getCashFlow(scope, period.prev) : Promise.resolve(null),
-      getPerBusinessPL(scope, period.range),
-      getWeeklyTrend(scope, 8),
-      getFinanceDashboard(scope),
-      getAccountsSummary(scope),
-      canCosts ? getProfitAndLoss(scope, period.range) : Promise.resolve(null),
-      canCosts && period.prev
-        ? getProfitAndLoss(scope, period.prev)
-        : Promise.resolve(null),
-      canCosts ? getCogsByBusiness(scope, period.range) : Promise.resolve(null),
-      getFinancialGoals(scope),
-      getCfoAlerts(scope),
-    ]);
+    await withTimeout(
+      Promise.all([
+        getCashFlow(scope, period.range),
+        period.prev ? getCashFlow(scope, period.prev) : Promise.resolve(null),
+        getPerBusinessPL(scope, period.range),
+        getWeeklyTrend(scope, 8),
+        getFinanceDashboard(scope),
+        getAccountsSummary(scope),
+        canCosts ? getProfitAndLoss(scope, period.range) : Promise.resolve(null),
+        canCosts && period.prev
+          ? getProfitAndLoss(scope, period.prev)
+          : Promise.resolve(null),
+        canCosts ? getCogsByBusiness(scope, period.range) : Promise.resolve(null),
+        getFinancialGoals(scope),
+        getCfoAlerts(scope),
+      ]),
+      9000,
+      "el dashboard"
+    );
 
   const activeGoals = goals.filter((g) => g.status !== "pausada").slice(0, 3);
 
