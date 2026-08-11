@@ -12,6 +12,7 @@ import {
 } from "@/lib/queries/finance";
 import { getFinanceDashboard } from "@/lib/queries/dashboard";
 import { getCashProjection } from "@/lib/queries/treasury";
+import { withTimeout } from "@/lib/with-timeout";
 import { PeriodFilter } from "@/components/period-filter";
 import { BarsChart } from "@/components/charts/bars-chart";
 import { ProjectionSection } from "./_components/projection";
@@ -38,14 +39,18 @@ export default async function FlujoPage({
   const { period: periodParam, from, to } = await searchParams;
   const period = resolveCustomRange(from, to) ?? resolvePeriod(periodParam);
 
-  const [cf, transactions, weekly, dash, future, projection] = await Promise.all([
-    getCashFlow(scope, period.range),
-    getTransactions(scope, period.range),
-    getWeeklyTrend(scope, 8),
-    getFinanceDashboard(scope),
-    getFutureTransactions(scope),
-    getCashProjection(scope),
-  ]);
+  const [cf, transactions, weekly, dash, future, projection] = await withTimeout(
+    Promise.all([
+      getCashFlow(scope, period.range),
+      getTransactions(scope, period.range),
+      getWeeklyTrend(scope, 8),
+      getFinanceDashboard(scope),
+      getFutureTransactions(scope),
+      getCashProjection(scope),
+    ]),
+    9000,
+    "Flujo de caja"
+  );
 
   const monthlyTrend = dash.salesTrend.map((p, i) => ({
     label: p.label,

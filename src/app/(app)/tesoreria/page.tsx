@@ -9,18 +9,23 @@ import {
   getRecurringMonthlyTotal,
 } from "@/lib/queries/treasury";
 import { TreasuryManager } from "./_components/treasury-manager";
+import { withTimeout } from "@/lib/with-timeout";
 
 export default async function TesoreriaPage() {
   const user = await requirePermission("finance.view");
   const canManage = can(user, "finance.manage");
   const scope = await getCurrentBusiness();
 
-  const [accounts, recurring, cashPosition, recurringMonthly] = await Promise.all([
-    getBankAccounts(scope),
-    getRecurringExpenses(scope),
-    getCashPosition(scope),
-    getRecurringMonthlyTotal(scope),
-  ]);
+  const [accounts, recurring, cashPosition, recurringMonthly] = await withTimeout(
+    Promise.all([
+      getBankAccounts(scope),
+      getRecurringExpenses(scope),
+      getCashPosition(scope),
+      getRecurringMonthlyTotal(scope),
+    ]),
+    9000,
+    "Tesorería"
+  );
 
   const accountsDto = accounts.map((a) => ({
     id: a.id,

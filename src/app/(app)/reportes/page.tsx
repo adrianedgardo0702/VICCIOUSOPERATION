@@ -5,6 +5,7 @@ import { formatMoney } from "@/lib/format";
 import { resolvePeriod, resolveCustomRange, type DateRange } from "@/lib/period";
 import { getProfitAndLoss, type ProfitAndLoss } from "@/lib/queries/finance";
 import { getMonthlyClosures, getClosureFor } from "@/lib/queries/closures";
+import { withTimeout } from "@/lib/with-timeout";
 import { PeriodFilter } from "@/components/period-filter";
 import { ClosureSection } from "./_components/closure-section";
 import {
@@ -44,17 +45,25 @@ export default async function ReportesPage({
   const closeMonthKey = cm && /^\d{4}-\d{2}$/.test(cm) ? cm : currentMonthKey();
 
   // Un reporte por negocio + consolidado, para el periodo elegido.
-  const [total, ...perBiz] = await Promise.all([
-    getProfitAndLoss("all", period.range),
-    ...BUSINESS_IDS.map((id) => getProfitAndLoss(id, period.range)),
-  ]);
+  const [total, ...perBiz] = await withTimeout(
+    Promise.all([
+      getProfitAndLoss("all", period.range),
+      ...BUSINESS_IDS.map((id) => getProfitAndLoss(id, period.range)),
+    ]),
+    9000,
+    "Reportes"
+  );
 
   // Cierre mensual: preview del mes elegido + estado + historial.
-  const [monthPreview, closure, closures] = await Promise.all([
-    getProfitAndLoss(scope, monthRange(closeMonthKey)),
-    getClosureFor(scope, closeMonthKey),
-    getMonthlyClosures(scope),
-  ]);
+  const [monthPreview, closure, closures] = await withTimeout(
+    Promise.all([
+      getProfitAndLoss(scope, monthRange(closeMonthKey)),
+      getClosureFor(scope, closeMonthKey),
+      getMonthlyClosures(scope),
+    ]),
+    9000,
+    "Reportes (cierre)"
+  );
 
   const rows = BUSINESS_IDS.map((id, i) => ({
     id,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { requirePermission, can } from "@/lib/session";
 import { getGroupCommission, getCommissionPayments } from "@/lib/queries/commissions";
+import { withTimeout } from "@/lib/with-timeout";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GroupCommissions } from "./_components/commissions-tab";
@@ -45,10 +46,14 @@ export default async function ComisionesPage({
   const atCurrent = monthKey >= current;
 
   const onlySellerId = user.role === "vendedor" ? user.id : undefined;
-  const [group, payments] = await Promise.all([
-    getGroupCommission(monthKey),
-    getCommissionPayments(onlySellerId),
-  ]);
+  const [group, payments] = await withTimeout(
+    Promise.all([
+      getGroupCommission(monthKey),
+      getCommissionPayments(onlySellerId),
+    ]),
+    9000,
+    "Comisiones"
+  );
 
   return (
     <div className="space-y-6">

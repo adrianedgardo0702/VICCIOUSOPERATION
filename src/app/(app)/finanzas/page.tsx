@@ -22,6 +22,7 @@ import { getCfoAlerts } from "@/lib/queries/cfo";
 import { cfoAlertToSuggestion } from "@/lib/cfo";
 import { getFinanceDashboard, deltaPct } from "@/lib/queries/dashboard";
 import { computePayoff, generateSuggestions } from "@/lib/finance";
+import { withTimeout } from "@/lib/with-timeout";
 import {
   Card,
   CardContent,
@@ -81,23 +82,27 @@ export default async function FinanzasPage({
     pnl,
     topByProfit,
     cfoAlerts,
-  ] = await Promise.all([
-    getFinanceDashboard(scope),
-    getCashFlow(scope, period.range),
-    period.prev ? getCashFlow(scope, period.prev) : Promise.resolve(null),
-    getPerBusinessPL(scope, period.range),
-    getTxByCategory(scope, period.range),
-    getTransactions(scope, period.range),
-    getWeeklyTrend(scope, 8),
-    getTopProductsSold(scope, period.range, 5),
-    getReceivables(scope),
-    getDebts(),
-    getCreditCards(scope),
-    getLowStockCount(),
-    canCosts ? getProfitAndLoss(scope, period.range) : Promise.resolve(null),
-    canCosts ? getTopByProfit(scope, period.range, 5) : Promise.resolve(null),
-    getCfoAlerts(scope),
-  ]);
+  ] = await withTimeout(
+    Promise.all([
+      getFinanceDashboard(scope),
+      getCashFlow(scope, period.range),
+      period.prev ? getCashFlow(scope, period.prev) : Promise.resolve(null),
+      getPerBusinessPL(scope, period.range),
+      getTxByCategory(scope, period.range),
+      getTransactions(scope, period.range),
+      getWeeklyTrend(scope, 8),
+      getTopProductsSold(scope, period.range, 5),
+      getReceivables(scope),
+      getDebts(),
+      getCreditCards(scope),
+      getLowStockCount(),
+      canCosts ? getProfitAndLoss(scope, period.range) : Promise.resolve(null),
+      canCosts ? getTopByProfit(scope, period.range, 5) : Promise.resolve(null),
+      getCfoAlerts(scope),
+    ]),
+    9000,
+    "Finanzas"
+  );
 
   const trend = dash.salesTrend.map((p, i) => ({
     label: p.label,
